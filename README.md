@@ -1,36 +1,50 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# mcppcasebot
 
-## Getting Started
+Voice-first MBB case interview coach powered by Claude. Share the deployed URL so anyone can practice live cases, framework reviews, and debriefs.
 
-First, run the development server:
+## Features
+
+- Custom coach persona (McKinsey / BCG / Bain style)
+- **Free voice input** via browser speech recognition (Chrome or Edge recommended)
+- **Free voice output** via browser text-to-speech (uses the best neural voice on your device)
+- Streaming chat with transcript toggle
+- Public shareable link after deploy
+
+## Local setup
+
+1. Copy env file and add your Anthropic key:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.example .env.local
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Install and run:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm install
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+3. Open [http://localhost:3000](http://localhost:3000) in **Chrome or Edge**, allow microphone access, and tap the mic to speak.
 
-## Learn More
+## Deploy to Vercel (shareable link)
 
-To learn more about Next.js, take a look at the following resources:
+1. Push this folder to GitHub (or deploy from the `mcppcasebot` directory).
+2. Import the project in [Vercel](https://vercel.com/new).
+3. Add environment variable: `ANTHROPIC_API_KEY`.
+4. Deploy — your shareable URL will be something like `https://mcppcasebot.vercel.app`.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Cost notes
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- **Voice is free** (browser APIs only).
+- **Claude API usage is not free** — you pay Anthropic per message. A simple rate limit (40 requests per IP per hour) helps protect a public deployment.
 
-## Deploy on Vercel
+## Voice tips
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- Use **Chrome or Edge** on desktop for reliable long-form dictation.
+- Tap mic once to start, speak your full answer, tap again to send.
+- Toggle **Show transcript** if you want to read along or type instead.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Editing coach instructions
+
+Update `src/lib/system-prompt.ts` and redeploy.
