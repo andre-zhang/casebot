@@ -1,4 +1,5 @@
-import type { SessionConfig, SessionPhase } from "@/lib/session-types";
+import type { SessionConfig, SessionPhase, SessionMode } from "@/lib/session-types";
+import { isLiveCaseMode } from "@/lib/session-types";
 
 const BASE_PROMPT = `You are an expert management consulting case interview coach modeled after McKinsey, BCG, and Bain. You run realistic live cases and deliver sharp, structured feedback.
 
@@ -121,12 +122,34 @@ export function buildSystemPrompt(
 ${caseBible}`;
   }
 
-  if (phase === "case") {
-    prompt += `
+  if (phase === "case" && config) {
+    if (config.mode === "framework") {
+      prompt += `
 
-## PHASE INSTRUCTIONS
+## PHASE INSTRUCTIONS — FRAMEWORK REVIEW
 
-You are in a live case. Use [CASE_BIBLE] only on the first case message if not already established. Every reply needs [SPOKEN]. Add [EXHIBIT] when sharing data. No mid-case feedback for intermediate/advanced.`;
+Do NOT run a live case. Do NOT use [CASE_BIBLE]. Help the candidate practice structuring a case. Ask them to walk through their framework, then critique MECE structure, tailoring, and prioritization. Every reply uses [SPOKEN] only.`;
+    } else if (config.mode === "math-drill") {
+      prompt += `
+
+## PHASE INSTRUCTIONS — MATH DRILL
+
+Do NOT run a full live case. Do NOT use [CASE_BIBLE]. Present one math problem at a time (market sizing, profitability, or breakeven). Use [SPOKEN] and optional [EXHIBIT]. Push on setup, math, and sanity checks.`;
+    } else if (config.mode === "transcript-review") {
+      prompt += `
+
+## PHASE INSTRUCTIONS — TRANSCRIPT FEEDBACK
+
+Do NOT run a live case. Do NOT use [CASE_BIBLE]. Ask the candidate to paste a prior response or transcript, then discuss it. Every reply uses [SPOKEN] only until they end the session.`;
+    } else if (isLiveCaseMode(config.mode)) {
+      prompt += `
+
+## PHASE INSTRUCTIONS — LIVE CASE
+
+Use [CASE_BIBLE] only on the first message if not already established. Every reply needs [SPOKEN]. Add [EXHIBIT] when sharing data. No mid-case feedback for intermediate/advanced.
+
+Mode: ${config.mode === "candidate-led" ? "Candidate leads — follow their structure, do not drive the case." : "Interviewer leads — you drive the case MBB-style."}`;
+    }
   }
 
   if (phase === "feedback") {
@@ -154,4 +177,30 @@ export function buildCaseStartMessage(
 
 export function buildCaseEndMessage(): string {
   return `[SYSTEM: The candidate pressed End Case. Deliver the full written debrief now using only a [FEEDBACK] block.]`;
+}
+
+export function buildSessionStartMessage(config: SessionConfig): string {
+  const { mode, level, industry, caseType } = config;
+  const industryLabel = industry === "Random" ? "your choice" : industry;
+  const caseTypeLabel = caseType === "Random" ? "your choice" : caseType;
+
+  switch (mode) {
+    case "interviewer-led":
+      return buildCaseStartMessage(config);
+    case "candidate-led":
+      return `[SYSTEM: Begin a candidate-led case. Level: ${level}. Industry: ${industryLabel}. Case type: ${caseTypeLabel}. Present the prompt in [SPOKEN] first, then a compact [CASE_BIBLE], then optional [EXHIBIT]. The candidate leads — follow their structure, only push back as an interviewer would. Do not drive the case for them.]`;
+    case "framework":
+      return `[SYSTEM: Begin a framework review. Level: ${level}. Case type to structure: ${caseTypeLabel}. Industry context: ${industryLabel}. Do NOT start a live case. In [SPOKEN], ask the candidate to walk you through how they would structure this case type.]`;
+    case "transcript-review":
+      return `[SYSTEM: Begin a transcript feedback session. Level: ${level}. Do NOT start a case. In [SPOKEN], ask the candidate to paste the response or transcript they want reviewed.]`;
+    case "math-drill":
+      return `[SYSTEM: Begin a math drill. Level: ${level}. Focus area: ${caseTypeLabel}. Do NOT start a full case. In [SPOKEN], present the first math problem. Use [EXHIBIT] if it helps.]`;
+  }
+}
+
+export function buildSessionEndMessage(config: SessionConfig): string {
+  if (isLiveCaseMode(config.mode)) {
+    return buildCaseEndMessage();
+  }
+  return `[SYSTEM: The candidate ended the session. Deliver a full written debrief for this ${config.mode} session using only a [FEEDBACK] block.]`;
 }

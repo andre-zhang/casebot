@@ -98,6 +98,14 @@ export function modeUsesVoice(mode: SessionMode): boolean {
   return mode === "interviewer-led" || mode === "candidate-led";
 }
 
+export function isLiveCaseMode(mode: SessionMode): boolean {
+  return mode === "interviewer-led" || mode === "candidate-led";
+}
+
+export function sessionModeLabel(mode: SessionMode): string {
+  return SESSION_MODES.find((m) => m.value === mode)?.label ?? mode;
+}
+
 export function defaultConfig(): SessionConfig {
   return {
     mode: "interviewer-led",

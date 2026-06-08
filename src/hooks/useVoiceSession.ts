@@ -37,6 +37,53 @@ function splitSentences(text: string): string[] {
     .filter(Boolean);
 }
 
+function waitForVoices(timeoutMs = 1500): Promise<SpeechSynthesisVoice[]> {
+  return new Promise((resolve) => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      resolve([]);
+      return;
+    }
+
+    const existing = window.speechSynthesis.getVoices();
+    if (existing.length > 0) {
+      resolve(existing);
+      return;
+    }
+
+    let settled = false;
+    const finish = (voices: SpeechSynthesisVoice[]) => {
+      if (settled) return;
+      settled = true;
+      window.speechSynthesis.removeEventListener("voiceschanged", onChange);
+      clearTimeout(timer);
+      resolve(voices);
+    };
+
+    const onChange = () => {
+      finish(window.speechSynthesis.getVoices());
+    };
+
+    const timer = window.setTimeout(() => {
+      finish(window.speechSynthesis.getVoices());
+    }, timeoutMs);
+
+    window.speechSynthesis.addEventListener("voiceschanged", onChange);
+    window.speechSynthesis.getVoices();
+  });
+}
+
+export function unlockSpeechOutput(): void {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+  window.speechSynthesis.resume();
+  void waitForVoices(500).then((voices) => {
+    if (voices.length === 0) return;
+    const utterance = new SpeechSynthesisUtterance(" ");
+    utterance.volume = 0.01;
+    window.speechSynthesis.speak(utterance);
+    window.speechSynthesis.cancel();
+  });
+}
+
 export function useSpeechOutput() {
   const [speaking, setSpeaking] = useState(false);
   const voiceRef = useRef<SpeechSynthesisVoice | null>(null);
@@ -85,43 +132,50 @@ export function useSpeechOutput() {
           resolve();
         };
 
-        const sentences = splitSentences(trimmed);
-        const queue = sentences.length > 0 ? sentences : [trimmed];
-        let index = 0;
-
-        const speakNext = () => {
-          if (index >= queue.length) {
-            setSpeaking(false);
-            const done = onCompleteRef.current;
-            onCompleteRef.current = null;
-            done?.();
-            return;
+        void waitForVoices().then((voices) => {
+          window.speechSynthesis.resume();
+          if (voices.length > 0) {
+            voiceRef.current = pickBestVoice(voices);
           }
 
-          const utterance = new SpeechSynthesisUtterance(queue[index]);
-          index += 1;
-          utterance.rate = 0.92;
-          utterance.pitch = 0.98;
-          utterance.lang = "en-US";
-          if (voiceRef.current) {
-            utterance.voice = voiceRef.current;
-          }
+          const sentences = splitSentences(trimmed);
+          const queue = sentences.length > 0 ? sentences : [trimmed];
+          let index = 0;
 
-          utterance.onstart = () => setSpeaking(true);
-          utterance.onend = () => {
-            window.setTimeout(speakNext, 140);
+          const speakNext = () => {
+            if (index >= queue.length) {
+              setSpeaking(false);
+              const done = onCompleteRef.current;
+              onCompleteRef.current = null;
+              done?.();
+              return;
+            }
+
+            const utterance = new SpeechSynthesisUtterance(queue[index]);
+            index += 1;
+            utterance.rate = 0.92;
+            utterance.pitch = 0.98;
+            utterance.lang = "en-US";
+            if (voiceRef.current) {
+              utterance.voice = voiceRef.current;
+            }
+
+            utterance.onstart = () => setSpeaking(true);
+            utterance.onend = () => {
+              window.setTimeout(speakNext, 140);
+            };
+            utterance.onerror = () => {
+              setSpeaking(false);
+              const done = onCompleteRef.current;
+              onCompleteRef.current = null;
+              done?.();
+            };
+
+            window.speechSynthesis.speak(utterance);
           };
-          utterance.onerror = () => {
-            setSpeaking(false);
-            const done = onCompleteRef.current;
-            onCompleteRef.current = null;
-            done?.();
-          };
 
-          window.speechSynthesis.speak(utterance);
-        };
-
-        speakNext();
+          speakNext();
+        });
       }),
     [stop]
   );

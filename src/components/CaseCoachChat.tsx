@@ -7,12 +7,14 @@ import { ExhibitPanel } from "@/components/CaseExhibit";
 import { FeedbackPanel } from "@/components/FeedbackPanel";
 import { SetupMenu } from "@/components/SetupMenu";
 import {
-  buildCaseEndMessage,
-  buildCaseStartMessage,
+  buildSessionEndMessage,
+  buildSessionStartMessage,
 } from "@/lib/build-system-prompt";
 import { parseCoachResponse } from "@/lib/parse-response";
 import {
+  isLiveCaseMode,
   modeUsesVoice,
+  sessionModeLabel,
   type Exhibit,
   type SessionConfig,
   type SessionPhase,
@@ -27,7 +29,7 @@ import {
   statusPillClass,
   surfaceSoftClass,
 } from "@/lib/ui-classes";
-import { useSpeechInput, useSpeechOutput } from "@/hooks/useVoiceSession";
+import { unlockSpeechOutput, useSpeechInput, useSpeechOutput } from "@/hooks/useVoiceSession";
 
 function messageText(parts: { type: string; text?: string }[]): string {
   return parts
@@ -78,6 +80,7 @@ export function CaseCoachChat() {
 
   const busy = status === "submitted" || status === "streaming";
   const voiceEnabled = config ? modeUsesVoice(config.mode) : false;
+  const liveCaseMode = config ? isLiveCaseMode(config.mode) : false;
   const inLiveCase = phase === "case" && voiceEnabled;
 
   useEffect(() => {
@@ -105,7 +108,7 @@ export function CaseCoachChat() {
   useEffect(() => {
     if (busy || !liveParsed) return;
 
-    if (liveParsed.caseBible) {
+    if (liveParsed.caseBible && liveCaseMode) {
       sessionRef.current.caseBible = liveParsed.caseBible;
     }
 
@@ -116,7 +119,7 @@ export function CaseCoachChat() {
     if (phase === "case" && liveParsed.exhibits.length > 0) {
       setActiveExhibits(liveParsed.exhibits);
     }
-  }, [busy, liveParsed, phase]);
+  }, [busy, liveCaseMode, liveParsed, phase]);
 
   useEffect(() => {
     if (!inLiveCase || busy) return;
@@ -161,6 +164,10 @@ export function CaseCoachChat() {
 
   const handleStart = useCallback(
     (nextConfig: SessionConfig) => {
+      if (modeUsesVoice(nextConfig.mode)) {
+        unlockSpeechOutput();
+      }
+
       setConfig(nextConfig);
       sessionRef.current.config = nextConfig;
       sessionRef.current.caseBible = null;
@@ -170,19 +177,21 @@ export function CaseCoachChat() {
       setActiveExhibits([]);
       lastSpokenIdRef.current = null;
 
-      void sendMessage({ text: buildCaseStartMessage(nextConfig) });
+      void sendMessage({ text: buildSessionStartMessage(nextConfig) });
     },
     [sendMessage]
   );
 
   const handleEndCase = useCallback(() => {
+    if (!config) return;
+
     autoMicRef.current = false;
     stopSpeaking();
     speech.stop();
     sessionRef.current.phase = "feedback";
     setPhase("feedback");
-    void sendMessage({ text: buildCaseEndMessage() });
-  }, [sendMessage, speech, stopSpeaking]);
+    void sendMessage({ text: buildSessionEndMessage(config) });
+  }, [config, sendMessage, speech, stopSpeaking]);
 
   const sendDraft = useCallback(
     async (text: string) => {
@@ -221,11 +230,24 @@ export function CaseCoachChat() {
   const awaitingCoach =
     busy && phase === "case" && !coachLine.trim();
 
+  const sessionTitle =
+    phase === "setup"
+      ? "Case setup"
+      : phase === "feedback"
+        ? "Debrief"
+        : config
+          ? sessionModeLabel(config.mode)
+          : "Session";
+
+  const endButtonLabel = liveCaseMode ? "End case" : "End session";
+
   const phaseLabel =
     phase === "feedback"
       ? "Debrief ready"
       : awaitingCoach
-        ? "Preparing case"
+        ? liveCaseMode
+          ? "Preparing case"
+          : "Starting session"
         : speaking
           ? "Coach speaking"
           : busy
@@ -241,7 +263,7 @@ export function CaseCoachChat() {
       <header className={pageIntroClass}>
         <p className={eyebrowClass}>Case practice</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[var(--uoft-blue)] sm:text-3xl">
-          {phase === "setup" ? "Case setup" : phase === "feedback" ? "Debrief" : "Live case"}
+          {sessionTitle}
         </h1>
       </header>
 
@@ -257,7 +279,7 @@ export function CaseCoachChat() {
                 disabled={busy}
                 className={btnDangerClass}
               >
-                End case
+                {endButtonLabel}
               </button>
             </div>
           )}
@@ -291,7 +313,9 @@ export function CaseCoachChat() {
               {awaitingCoach && (
                 <div className={`w-full ${surfaceSoftClass}`}>
                   <p className="text-sm text-[var(--uoft-muted)]">
-                    Setting up your case. This usually takes a few seconds.
+                    {liveCaseMode
+                      ? "Setting up your case. This usually takes a few seconds."
+                      : "Starting your session. This usually takes a few seconds."}
                   </p>
                 </div>
               )}

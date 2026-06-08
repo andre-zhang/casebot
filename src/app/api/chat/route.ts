@@ -1,10 +1,8 @@
 import { anthropic } from "@ai-sdk/anthropic";
 import { convertToModelMessages, streamText, type UIMessage } from "ai";
-import {
-  buildSystemPrompt,
-} from "@/lib/build-system-prompt";
+import { buildSystemPrompt } from "@/lib/build-system-prompt";
 import { checkRateLimit, clientIp } from "@/lib/rate-limit";
-import type { SessionConfig, SessionPhase } from "@/lib/session-types";
+import { isLiveCaseMode, type SessionConfig, type SessionPhase } from "@/lib/session-types";
 
 export const maxDuration = 60;
 
@@ -53,12 +51,24 @@ export async function POST(req: Request) {
 
   const modelMessages = await convertToModelMessages(messages);
 
-  const isCaseStart =
+  const isLiveCaseStart =
+    phase === "case" &&
+    sessionConfig !== null &&
+    isLiveCaseMode(sessionConfig.mode) &&
+    modelMessages.filter((m) => m.role === "assistant").length === 0;
+
+  const isSessionStart =
     phase === "case" &&
     modelMessages.filter((m) => m.role === "assistant").length === 0;
 
   const maxOutputTokens =
-    phase === "feedback" ? 2500 : isCaseStart ? 1800 : 900;
+    phase === "feedback"
+      ? 2500
+      : isLiveCaseStart
+        ? 1800
+        : isSessionStart
+          ? 700
+          : 900;
 
   const result = streamText({
     model: anthropic(modelId),
