@@ -5,10 +5,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 function pickBestVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
   const english = voices.filter((v) => v.lang.startsWith("en"));
   const preferredNames = [
+    "Jenny Online",
     "Jenny",
-    "Guy",
     "Aria",
+    "Sonia Online",
     "Sonia",
+    "Guy Online",
+    "Guy",
+    "Microsoft Aria",
+    "Microsoft Jenny",
     "Natural",
     "Neural",
     "Google US English",
@@ -19,12 +24,23 @@ function pickBestVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | n
     if (match) return match;
   }
 
+  const online = english.find((v) => v.name.includes("Online"));
+  if (online) return online;
+
   return english[0] ?? voices[0] ?? null;
+}
+
+function splitSentences(text: string): string[] {
+  return text
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 export function useSpeechOutput() {
   const [speaking, setSpeaking] = useState(false);
   const voiceRef = useRef<SpeechSynthesisVoice | null>(null);
+  const onCompleteRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
@@ -44,43 +60,68 @@ export function useSpeechOutput() {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
     window.speechSynthesis.cancel();
     setSpeaking(false);
+    onCompleteRef.current = null;
   }, []);
 
   const speak = useCallback(
-    (text: string) =>
+    (text: string, onComplete?: () => void) =>
       new Promise<void>((resolve) => {
         if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+          onComplete?.();
           resolve();
           return;
         }
 
         const trimmed = text.trim();
         if (!trimmed) {
+          onComplete?.();
           resolve();
           return;
         }
 
         stop();
-
-        const utterance = new SpeechSynthesisUtterance(trimmed);
-        utterance.rate = 0.98;
-        utterance.pitch = 1;
-        utterance.lang = "en-US";
-        if (voiceRef.current) {
-          utterance.voice = voiceRef.current;
-        }
-
-        utterance.onstart = () => setSpeaking(true);
-        utterance.onend = () => {
-          setSpeaking(false);
-          resolve();
-        };
-        utterance.onerror = () => {
-          setSpeaking(false);
+        onCompleteRef.current = () => {
+          onComplete?.();
           resolve();
         };
 
-        window.speechSynthesis.speak(utterance);
+        const sentences = splitSentences(trimmed);
+        const queue = sentences.length > 0 ? sentences : [trimmed];
+        let index = 0;
+
+        const speakNext = () => {
+          if (index >= queue.length) {
+            setSpeaking(false);
+            const done = onCompleteRef.current;
+            onCompleteRef.current = null;
+            done?.();
+            return;
+          }
+
+          const utterance = new SpeechSynthesisUtterance(queue[index]);
+          index += 1;
+          utterance.rate = 0.92;
+          utterance.pitch = 0.98;
+          utterance.lang = "en-US";
+          if (voiceRef.current) {
+            utterance.voice = voiceRef.current;
+          }
+
+          utterance.onstart = () => setSpeaking(true);
+          utterance.onend = () => {
+            window.setTimeout(speakNext, 140);
+          };
+          utterance.onerror = () => {
+            setSpeaking(false);
+            const done = onCompleteRef.current;
+            onCompleteRef.current = null;
+            done?.();
+          };
+
+          window.speechSynthesis.speak(utterance);
+        };
+
+        speakNext();
       }),
     [stop]
   );
@@ -195,6 +236,5 @@ export function useSpeechInput() {
     start,
     stop,
     reset,
-    setTranscript,
   };
 }
