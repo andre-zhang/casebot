@@ -17,6 +17,16 @@ import {
   type SessionPhase,
   type Exhibit,
 } from "@/lib/session-types";
+import {
+  btnDangerClass,
+  btnPrimaryClass,
+  btnSecondaryClass,
+  eyebrowClass,
+  inputClass,
+  pageIntroClass,
+  statusPillClass,
+  surfaceSoftClass,
+} from "@/lib/ui-classes";
 import { useSpeechInput, useSpeechOutput } from "@/hooks/useVoiceSession";
 
 function messageText(parts: { type: string; text?: string }[]): string {
@@ -26,10 +36,7 @@ function messageText(parts: { type: string; text?: string }[]): string {
     .join("");
 }
 
-type ParsedMap = Record<
-  string,
-  ReturnType<typeof parseCoachResponse>
->;
+type ParsedMap = Record<string, ReturnType<typeof parseCoachResponse>>;
 
 export function CaseCoachChat() {
   const sessionRef = useRef<{
@@ -57,7 +64,8 @@ export function CaseCoachChat() {
     []
   );
 
-  const { messages, sendMessage, status, setMessages, error: chatError } = useChat({ transport });
+  const { messages, sendMessage, status, setMessages, error: chatError } =
+    useChat({ transport });
   const { speak, stop: stopSpeaking, speaking } = useSpeechOutput();
   const speech = useSpeechInput();
 
@@ -67,7 +75,6 @@ export function CaseCoachChat() {
   const [activeExhibits, setActiveExhibits] = useState<Exhibit[]>([]);
   const [feedbackMarkdown, setFeedbackMarkdown] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
-  const [currentCase, setCurrentCase] = useState(1);
 
   const lastSpokenIdRef = useRef<string | null>(null);
   const autoMicRef = useRef(false);
@@ -123,15 +130,7 @@ export function CaseCoachChat() {
         speech.start();
       }
     });
-  }, [
-    lastAssistant,
-    lastParsed,
-    busy,
-    inLiveCase,
-    phase,
-    speak,
-    speech,
-  ]);
+  }, [lastAssistant, lastParsed, busy, inLiveCase, speak, speech]);
 
   useEffect(() => {
     if (speech.listening) setDraft(speech.transcript);
@@ -146,7 +145,6 @@ export function CaseCoachChat() {
     setActiveExhibits([]);
     setFeedbackMarkdown(null);
     setDraft("");
-    setCurrentCase(1);
     sessionRef.current.caseBible = null;
     lastSpokenIdRef.current = null;
     autoMicRef.current = false;
@@ -161,7 +159,6 @@ export function CaseCoachChat() {
       sessionRef.current.caseBible = null;
       sessionRef.current.phase = "case";
       setPhase("case");
-      setCurrentCase(1);
       setFeedbackMarkdown(null);
       setActiveExhibits([]);
       setParsedById({});
@@ -180,23 +177,6 @@ export function CaseCoachChat() {
     setPhase("feedback");
     void sendMessage({ text: buildCaseEndMessage() });
   }, [sendMessage, speech, stopSpeaking]);
-
-  const handleNextCase = useCallback(() => {
-    if (!config || currentCase >= config.caseCount) return;
-
-    const next = currentCase + 1;
-    setCurrentCase(next);
-    setFeedbackMarkdown(null);
-    setActiveExhibits([]);
-    sessionRef.current.caseBible = null;
-    sessionRef.current.phase = "case";
-    setPhase("case");
-    lastSpokenIdRef.current = null;
-
-    void sendMessage({
-      text: buildCaseStartMessage(config, next),
-    });
-  }, [config, currentCase, sendMessage]);
 
   const sendDraft = useCallback(
     async (text: string) => {
@@ -230,64 +210,41 @@ export function CaseCoachChat() {
     speech.reset();
     setDraft("");
     speech.start();
-  }, [
-    busy,
-    draft,
-    inLiveCase,
-    phase,
-    sendDraft,
-    speaking,
-    speech,
-    stopSpeaking,
-  ]);
+  }, [busy, draft, inLiveCase, sendDraft, speaking, speech, stopSpeaking]);
 
   const phaseLabel =
     phase === "feedback"
-      ? "Review your debrief below"
+      ? "Debrief ready"
       : speaking
-        ? "Coach is speaking"
+        ? "Coach speaking"
         : busy
-          ? "Coach is thinking"
+          ? "Coach thinking"
           : speech.listening
-            ? "Listening — tap mic when done"
+            ? "Listening"
             : inLiveCase
-              ? "Tap mic to respond"
-              : phase === "case"
-                ? "Type your response below"
-                : "Configure your session";
+              ? "Your turn"
+              : "In session";
 
   return (
-    <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col px-4 py-8 sm:px-6">
-      <header className="mb-6 text-center">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-          MBB Case Interview Coach
-        </p>
-        <h1 className="mt-2 text-2xl font-semibold text-white sm:text-3xl">
-          mcppcasebot
+    <>
+      <header className={pageIntroClass}>
+        <p className={eyebrowClass}>Case practice</p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[var(--uoft-blue)] sm:text-3xl">
+          {phase === "setup" ? "Case setup" : phase === "feedback" ? "Debrief" : "Live case"}
         </h1>
-        {config && phase !== "setup" && (
-          <p className="mt-2 text-sm text-slate-400">
-            Case {currentCase} of {config.caseCount} · {config.level} ·{" "}
-            {config.mode.replace("-", " ")}
-          </p>
-        )}
       </header>
 
-      {phase === "setup" && (
-        <div className="flex flex-1 flex-col items-center justify-center">
-          <SetupMenu onStart={handleStart} disabled={busy} />
-        </div>
-      )}
+      {phase === "setup" && <SetupMenu onStart={handleStart} disabled={busy} />}
 
       {phase !== "setup" && (
         <>
           {phase === "case" && (
-            <div className="mb-4 flex justify-end">
+            <div className="flex justify-end">
               <button
                 type="button"
                 onClick={handleEndCase}
                 disabled={busy}
-                className="rounded-full border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-200 hover:bg-red-500/20 disabled:opacity-40"
+                className={btnDangerClass}
               >
                 End case
               </button>
@@ -295,22 +252,12 @@ export function CaseCoachChat() {
           )}
 
           {phase === "feedback" && feedbackMarkdown && (
-            <div className="mb-6 space-y-4">
+            <div className="space-y-4">
               <FeedbackPanel markdown={feedbackMarkdown} />
-              {config && currentCase < config.caseCount && (
-                <button
-                  type="button"
-                  onClick={handleNextCase}
-                  disabled={busy}
-                  className="w-full rounded-xl bg-sky-600 py-3 text-sm font-semibold text-white hover:bg-sky-500 disabled:opacity-40"
-                >
-                  Start case {currentCase + 1}
-                </button>
-              )}
               <button
                 type="button"
                 onClick={resetSession}
-                className="w-full rounded-xl border border-slate-600 py-3 text-sm text-slate-300 hover:bg-slate-800"
+                className={`w-full ${btnSecondaryClass}`}
               >
                 New session
               </button>
@@ -318,72 +265,46 @@ export function CaseCoachChat() {
           )}
 
           {phase === "case" && (
-            <section className="flex flex-1 flex-col items-center gap-5">
-              <div
-                className={`rounded-full border px-4 py-2 text-sm ${
-                  speech.listening
-                    ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-200"
-                    : busy
-                      ? "border-amber-400/40 bg-amber-500/10 text-amber-100"
-                      : speaking
-                        ? "border-sky-400/40 bg-sky-500/10 text-sky-100"
-                        : "border-slate-600 bg-slate-800/60 text-slate-200"
-                }`}
-              >
-                {phaseLabel}
-              </div>
+            <section className="flex flex-col items-center gap-5">
+              <span className={statusPillClass}>{phaseLabel}</span>
 
               {coachLine && (
-                <div className="w-full rounded-2xl border border-slate-700 bg-slate-900/70 p-4 text-sm leading-relaxed text-slate-200">
-                  <p className="mb-1 text-xs uppercase tracking-wide text-slate-500">
-                    Coach
+                <div className={`w-full ${surfaceSoftClass}`}>
+                  <p className={eyebrowClass}>Coach</p>
+                  <p className="mt-2 text-sm leading-relaxed text-[var(--foreground)]">
+                    {coachLine}
                   </p>
-                  <p>{coachLine}</p>
                 </div>
               )}
 
               <ExhibitPanel exhibits={activeExhibits} />
 
               {inLiveCase && (
-                <>
-                  <button
-                    type="button"
-                    onClick={toggleMic}
-                    disabled={busy}
-                    aria-label={speech.listening ? "Stop and send" : "Start speaking"}
-                    className={`relative flex h-32 w-32 items-center justify-center rounded-full transition-all focus:outline-none focus-visible:ring-4 focus-visible:ring-sky-400/50 disabled:cursor-not-allowed disabled:opacity-50 ${
-                      speech.listening
-                        ? "bg-emerald-500 shadow-[0_0_40px_rgba(16,185,129,0.45)]"
-                        : speaking
-                          ? "bg-slate-300 text-slate-900 hover:bg-white"
-                          : "bg-slate-100 text-slate-900 hover:bg-white"
-                    }`}
-                  >
-                    {speech.listening && (
-                      <span className="absolute inset-0 animate-ping rounded-full bg-emerald-400/30" />
-                    )}
-                    <MicIcon listening={speech.listening} />
-                  </button>
-
-                  <p className="max-w-md text-center text-xs text-slate-500">
-                    Tap mic while coach is speaking to interrupt and record. Mic
-                    opens automatically when the coach finishes.
-                  </p>
-                </>
+                <button
+                  type="button"
+                  onClick={toggleMic}
+                  disabled={busy}
+                  aria-label={speech.listening ? "Stop and send" : "Start speaking"}
+                  className={`relative flex h-28 w-28 items-center justify-center rounded-sm border-2 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--uoft-blue)] disabled:opacity-50 ${
+                    speech.listening
+                      ? "border-[var(--uoft-blue)] bg-[var(--uoft-blue)] text-white"
+                      : "border-[var(--uoft-border)] bg-white text-[var(--uoft-blue)] hover:border-[var(--uoft-blue)]"
+                  }`}
+                >
+                  <MicIcon listening={speech.listening} />
+                </button>
               )}
 
               {(draft || speech.listening) && inLiveCase && (
-                <div className="w-full rounded-2xl border border-slate-700 bg-slate-900/70 p-4 text-sm text-slate-200">
-                  <p className="mb-1 text-xs uppercase tracking-wide text-slate-500">
-                    Your words
-                  </p>
-                  <p>{draft || "…"}</p>
+                <div className={`w-full ${surfaceSoftClass}`}>
+                  <p className={eyebrowClass}>Your response</p>
+                  <p className="mt-2 text-sm text-[var(--foreground)]">{draft || "…"}</p>
                 </div>
               )}
 
               {(!inLiveCase || !speech.listening) && (
                 <form
-                  className="flex w-full max-w-lg gap-2"
+                  className="flex w-full gap-2"
                   onSubmit={(e) => {
                     e.preventDefault();
                     void sendDraft(draft);
@@ -394,12 +315,12 @@ export function CaseCoachChat() {
                     onChange={(e) => setDraft(e.target.value)}
                     placeholder="Type your response…"
                     disabled={busy || speech.listening}
-                    className="flex-1 rounded-full border border-slate-700 bg-slate-900 px-4 py-2 text-sm text-white placeholder:text-slate-500 focus:border-sky-500 focus:outline-none"
+                    className={inputClass}
                   />
                   <button
                     type="submit"
                     disabled={busy || !draft.trim() || speech.listening}
-                    className="rounded-full bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-40"
+                    className={btnPrimaryClass}
                   >
                     Send
                   </button>
@@ -409,19 +330,19 @@ export function CaseCoachChat() {
           )}
 
           {phase === "feedback" && !feedbackMarkdown && busy && (
-            <p className="text-center text-sm text-slate-400">
-              Generating your debrief…
+            <p className="text-center text-sm text-[var(--uoft-muted)]">
+              Generating debrief…
             </p>
           )}
 
           {(speech.error || chatError) && (
-            <p className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+            <p className="rounded-sm border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
               {speech.error || chatError?.message}
             </p>
           )}
         </>
       )}
-    </div>
+    </>
   );
 }
 
@@ -431,7 +352,7 @@ function MicIcon({ listening }: { listening: boolean }) {
       xmlns="http://www.w3.org/2000/svg"
       viewBox="0 0 24 24"
       fill="currentColor"
-      className={`relative h-11 w-11 ${listening ? "text-white" : "text-slate-900"}`}
+      className="h-10 w-10"
       aria-hidden
     >
       {listening ? (

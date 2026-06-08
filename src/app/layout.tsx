@@ -1,26 +1,24 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { Open_Sans } from "next/font/google";
+import { SiteHeader } from "@/components/site-header";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const openSans = Open_Sans({
+  variable: "--font-open-sans",
   subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "mcppcasebot — MBB Case Interview Coach",
-  description:
-    "Voice-first McKinsey, BCG, and Bain style case interview practice with live feedback.",
-  openGraph: {
-    title: "mcppcasebot",
-    description: "Voice-first MBB case interview coach",
-    type: "website",
-  },
+  title: "Management Consulting Prep Program — Case Practice",
+  description: "MBB-style case interview practice with voice and written feedback.",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#002a5c",
 };
 
 export default function RootLayout({
@@ -29,11 +27,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full bg-slate-950 text-slate-100">{children}</body>
+    <html lang="en" className={`${openSans.variable} h-full scroll-smooth antialiased`}>
+      <body className="flex min-h-dvh flex-col font-sans">
+        <SiteHeader />
+        {children}
+      </body>
     </html>
   );
 }

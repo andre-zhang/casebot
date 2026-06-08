@@ -1,13 +1,14 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { eyebrowClass, surfaceSoftClass } from "@/lib/ui-classes";
 
 function renderInline(text: string): ReactNode[] {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
   return parts.map((part, i) => {
     if (part.startsWith("**") && part.endsWith("**")) {
       return (
-        <strong key={i} className="font-semibold text-white">
+        <strong key={i} className="font-semibold text-[var(--foreground)]">
           {part.slice(2, -2)}
         </strong>
       );
@@ -48,9 +49,9 @@ function SimpleMarkdown({ content }: { content: string }) {
       <div key={`table-${elements.length}`} className="my-4 overflow-x-auto">
         <table className="w-full min-w-[320px] border-collapse text-sm">
           <thead>
-            <tr className="border-b border-slate-600 bg-slate-800/80">
+            <tr className="border-b border-[var(--uoft-border)] bg-[var(--uoft-bg)]/50">
               {header.map((cell, i) => (
-                <th key={i} className="px-3 py-2 text-left font-medium text-slate-300">
+                <th key={i} className="px-3 py-2 text-left font-semibold text-[var(--uoft-muted)]">
                   {cell.trim()}
                 </th>
               ))}
@@ -58,9 +59,9 @@ function SimpleMarkdown({ content }: { content: string }) {
           </thead>
           <tbody>
             {rows.map((row, ri) => (
-              <tr key={ri} className="border-b border-slate-700/60">
+              <tr key={ri} className="border-b border-[var(--uoft-border)]/40">
                 {row.map((cell, ci) => (
-                  <td key={ci} className="px-3 py-2 text-slate-200">
+                  <td key={ci} className="px-3 py-2 text-[var(--foreground)]">
                     {renderInline(cell.trim())}
                   </td>
                 ))}
@@ -97,7 +98,7 @@ function SimpleMarkdown({ content }: { content: string }) {
       elements.push(
         <h2
           key={`h2-${elements.length}`}
-          className="mt-6 mb-2 text-base font-semibold text-white first:mt-0"
+          className="mt-6 mb-2 text-base font-semibold text-[var(--uoft-blue)] first:mt-0"
         >
           {trimmed.slice(3)}
         </h2>
@@ -110,7 +111,7 @@ function SimpleMarkdown({ content }: { content: string }) {
       elements.push(
         <h3
           key={`h3-${elements.length}`}
-          className="mt-4 mb-2 text-sm font-semibold text-slate-200"
+          className="mt-4 mb-2 text-sm font-semibold text-[var(--foreground)]"
         >
           {trimmed.slice(4)}
         </h3>
@@ -134,7 +135,7 @@ function SimpleMarkdown({ content }: { content: string }) {
     if (trimmed === "") continue;
 
     elements.push(
-      <p key={`p-${elements.length}`} className="my-2 leading-relaxed text-slate-300">
+      <p key={`p-${elements.length}`} className="my-2 leading-relaxed text-[var(--uoft-muted)]">
         {renderInline(trimmed)}
       </p>
     );
@@ -148,11 +149,9 @@ function SimpleMarkdown({ content }: { content: string }) {
 
 export function FeedbackPanel({ markdown }: { markdown: string }) {
   return (
-    <section className="w-full rounded-2xl border border-slate-600 bg-slate-900/90 p-6 sm:p-8">
-      <p className="mb-6 text-xs font-semibold uppercase tracking-[0.2em] text-sky-400">
-        Case debrief
-      </p>
-      <div className="text-sm">
+    <section className={`w-full ${surfaceSoftClass}`}>
+      <p className={eyebrowClass}>Debrief</p>
+      <div className="mt-4 text-sm">
         <SimpleMarkdown content={markdown} />
       </div>
     </section>
