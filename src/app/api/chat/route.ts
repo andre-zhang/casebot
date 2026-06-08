@@ -58,7 +58,7 @@ export async function POST(req: Request) {
     modelMessages.filter((m) => m.role === "assistant").length === 0;
 
   const maxOutputTokens =
-    phase === "feedback" ? 2500 : isCaseStart ? 3500 : 900;
+    phase === "feedback" ? 2500 : isCaseStart ? 1800 : 900;
 
   const result = streamText({
     model: anthropic(modelId),

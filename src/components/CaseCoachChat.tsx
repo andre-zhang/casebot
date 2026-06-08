@@ -13,9 +13,9 @@ import {
 import { parseCoachResponse } from "@/lib/parse-response";
 import {
   modeUsesVoice,
+  type Exhibit,
   type SessionConfig,
   type SessionPhase,
-  type Exhibit,
 } from "@/lib/session-types";
 import {
   btnDangerClass,
@@ -35,8 +35,6 @@ function messageText(parts: { type: string; text?: string }[]): string {
     .map((part) => part.text)
     .join("");
 }
-
-type ParsedMap = Record<string, ReturnType<typeof parseCoachResponse>>;
 
 export function CaseCoachChat() {
   const sessionRef = useRef<{
@@ -71,7 +69,6 @@ export function CaseCoachChat() {
 
   const [phase, setPhase] = useState<SessionPhase>("setup");
   const [config, setConfig] = useState<SessionConfig | null>(null);
-  const [parsedById, setParsedById] = useState<ParsedMap>({});
   const [activeExhibits, setActiveExhibits] = useState<Exhibit[]>([]);
   const [feedbackMarkdown, setFeedbackMarkdown] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -88,49 +85,60 @@ export function CaseCoachChat() {
     sessionRef.current.config = config;
   }, [phase, config]);
 
+  const lastAssistant = useMemo(
+    () => [...messages].reverse().find((m) => m.role === "assistant"),
+    [messages]
+  );
+
+  const lastAssistantRaw = useMemo(
+    () => (lastAssistant ? messageText(lastAssistant.parts) : ""),
+    [lastAssistant]
+  );
+
+  const liveParsed = useMemo(
+    () => (lastAssistantRaw ? parseCoachResponse(lastAssistantRaw) : null),
+    [lastAssistantRaw]
+  );
+
+  const coachLine = liveParsed?.spoken ?? "";
+
   useEffect(() => {
-    for (const message of messages) {
-      if (message.role !== "assistant") continue;
-      if (parsedById[message.id]) continue;
+    if (busy || !liveParsed) return;
 
-      const raw = messageText(message.parts);
-      const parsed = parseCoachResponse(raw);
-
-      if (parsed.caseBible) {
-        sessionRef.current.caseBible = parsed.caseBible;
-      }
-
-      setParsedById((prev) => ({ ...prev, [message.id]: parsed }));
-
-      if (phase === "feedback" && parsed.feedbackMarkdown) {
-        setFeedbackMarkdown(parsed.feedbackMarkdown);
-      }
-
-      if (phase === "case" && parsed.exhibits.length > 0) {
-        setActiveExhibits(parsed.exhibits);
-      }
+    if (liveParsed.caseBible) {
+      sessionRef.current.caseBible = liveParsed.caseBible;
     }
-  }, [messages, parsedById, phase]);
 
-  const lastAssistant = [...messages]
-    .reverse()
-    .find((m) => m.role === "assistant");
-  const lastParsed = lastAssistant ? parsedById[lastAssistant.id] : null;
-  const coachLine = lastParsed?.spoken ?? "";
+    if (phase === "feedback" && liveParsed.feedbackMarkdown) {
+      setFeedbackMarkdown(liveParsed.feedbackMarkdown);
+    }
+
+    if (phase === "case" && liveParsed.exhibits.length > 0) {
+      setActiveExhibits(liveParsed.exhibits);
+    }
+  }, [busy, liveParsed, phase]);
 
   useEffect(() => {
     if (!inLiveCase || busy) return;
-    if (!lastAssistant || !lastParsed?.spoken.trim()) return;
+    if (!lastAssistant || !coachLine.trim()) return;
     if (lastSpokenIdRef.current === lastAssistant.id) return;
 
     lastSpokenIdRef.current = lastAssistant.id;
     autoMicRef.current = true;
-    void speak(lastParsed.spoken, () => {
+    void speak(coachLine, () => {
       if (autoMicRef.current && !speech.listening) {
         speech.start();
       }
     });
-  }, [lastAssistant, lastParsed, busy, inLiveCase, speak, speech]);
+  }, [
+    lastAssistant,
+    coachLine,
+    busy,
+    inLiveCase,
+    speak,
+    speech.listening,
+    speech.start,
+  ]);
 
   useEffect(() => {
     if (speech.listening) setDraft(speech.transcript);
@@ -141,7 +149,6 @@ export function CaseCoachChat() {
     speech.stop();
     speech.reset();
     setMessages([]);
-    setParsedById({});
     setActiveExhibits([]);
     setFeedbackMarkdown(null);
     setDraft("");
@@ -161,7 +168,6 @@ export function CaseCoachChat() {
       setPhase("case");
       setFeedbackMarkdown(null);
       setActiveExhibits([]);
-      setParsedById({});
       lastSpokenIdRef.current = null;
 
       void sendMessage({ text: buildCaseStartMessage(nextConfig) });
@@ -212,18 +218,23 @@ export function CaseCoachChat() {
     speech.start();
   }, [busy, draft, inLiveCase, sendDraft, speaking, speech, stopSpeaking]);
 
+  const awaitingCoach =
+    busy && phase === "case" && !coachLine.trim();
+
   const phaseLabel =
     phase === "feedback"
       ? "Debrief ready"
-      : speaking
-        ? "Coach speaking"
-        : busy
-          ? "Coach thinking"
-          : speech.listening
-            ? "Listening"
-            : inLiveCase
-              ? "Your turn"
-              : "In session";
+      : awaitingCoach
+        ? "Preparing case"
+        : speaking
+          ? "Coach speaking"
+          : busy
+            ? "Coach thinking"
+            : speech.listening
+              ? "Listening"
+              : inLiveCase
+                ? "Your turn"
+                : "In session";
 
   return (
     <>
@@ -273,6 +284,14 @@ export function CaseCoachChat() {
                   <p className={eyebrowClass}>Coach</p>
                   <p className="mt-2 text-sm leading-relaxed text-[var(--foreground)]">
                     {coachLine}
+                  </p>
+                </div>
+              )}
+
+              {awaitingCoach && (
+                <div className={`w-full ${surfaceSoftClass}`}>
+                  <p className="text-sm text-[var(--uoft-muted)]">
+                    Setting up your case. This usually takes a few seconds.
                   </p>
                 </div>
               )}

@@ -14,7 +14,9 @@ You MUST structure every reply using these tagged blocks. Content outside tags i
 
 ### During a live case (phase: case)
 
-1. On the FIRST case message only, include a hidden case bible with ALL facts, numbers, exhibit data, case phases, the underlying issue, and the intended recommendation path. Never contradict this bible later.
+1. On the FIRST case message only, include a compact case bible with ALL facts, numbers, exhibit data, case phases, the underlying issue, and the intended recommendation path. Keep the JSON concise. Never contradict this bible later.
+
+IMPORTANT STREAMING ORDER on case start: output [SPOKEN] first, then [CASE_BIBLE], then optional [EXHIBIT]. The candidate hears the opening before the rest finishes generating.
 
 [CASE_BIBLE]
 { "title": "...", "client": "...", "crux": "...", "recommendationPath": "...", "facts": { ... }, "exhibits": [ ... ] }
@@ -147,7 +149,7 @@ export function buildCaseStartMessage(
   const caseType =
     config.caseType === "Random" ? "your choice" : config.caseType;
 
-  return `[SYSTEM: Begin case ${caseNumber} of ${config.caseCount}. Mode: ${config.mode}. Level: ${config.level}. Industry: ${industry}. Case type: ${caseType}. Generate the complete case bible, deliver the opening prompt in [SPOKEN], and include an opening [EXHIBIT] if it helps set context. Plan the full case arc through to recommendation in the case bible.]`;
+  return `[SYSTEM: Begin case ${caseNumber} of ${config.caseCount}. Mode: ${config.mode}. Level: ${config.level}. Industry: ${industry}. Case type: ${caseType}. Output [SPOKEN] first with the opening prompt, then a compact [CASE_BIBLE], then an [EXHIBIT] if helpful. Plan the full arc through to recommendation.]`;
 }
 
 export function buildCaseEndMessage(): string {

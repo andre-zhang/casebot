@@ -14,6 +14,20 @@ function extractBlock(text: string, tag: string): string | null {
   return match?.[1]?.trim() ?? null;
 }
 
+function extractSpoken(raw: string): string {
+  const complete = extractBlock(raw, "SPOKEN");
+  if (complete) return complete;
+
+  const open = raw.indexOf("[SPOKEN]");
+  if (open === -1) return "";
+
+  const afterOpen = raw.slice(open + "[SPOKEN]".length);
+  const close = afterOpen.indexOf("[/SPOKEN]");
+  if (close !== -1) return afterOpen.slice(0, close).trim();
+
+  return afterOpen.replace(/\[(CASE_BIBLE|EXHIBIT|FEEDBACK)[\s\S]*/i, "").trim();
+}
+
 function stripBlocks(text: string): string {
   return text
     .replace(/\[(CASE_BIBLE|SPOKEN|EXHIBIT|FEEDBACK)\][\s\S]*?\[\/\1\]/gi, "")
@@ -33,7 +47,6 @@ function parseExhibit(raw: string): Exhibit | null {
 
 export function parseCoachResponse(raw: string): ParsedCoachResponse {
   const caseBible = extractBlock(raw, "CASE_BIBLE");
-  const spokenBlock = extractBlock(raw, "SPOKEN");
   const feedbackMarkdown = extractBlock(raw, "FEEDBACK");
 
   const exhibitMatches = [
@@ -43,10 +56,7 @@ export function parseCoachResponse(raw: string): ParsedCoachResponse {
     .map((m) => parseExhibit(m[1]?.trim() ?? ""))
     .filter((e): e is Exhibit => e !== null);
 
-  const spoken =
-    spokenBlock ??
-    (feedbackMarkdown ? "" : stripBlocks(raw)) ??
-    stripBlocks(raw);
+  const spoken = extractSpoken(raw) || (feedbackMarkdown ? "" : stripBlocks(raw));
 
   return {
     spoken: spoken.trim(),
