@@ -12,7 +12,6 @@ import {
 } from "@/lib/session-types";
 import {
   btnPrimaryClass,
-  eyebrowClass,
   inputClass,
   sectionClass,
   surfaceSoftClass,
@@ -30,13 +29,8 @@ export function SetupMenu({ onStart, disabled }: Props) {
 
   return (
     <section className={`w-full ${surfaceSoftClass}`}>
-      <p className={eyebrowClass}>Session</p>
-      <h2 className="mt-1 text-xl font-semibold tracking-tight text-[var(--uoft-blue)]">
-        Case setup
-      </h2>
-
-      <div className={`mt-6 ${sectionClass}`}>
-        <Field label="What do you want to do?">
+      <div className={sectionClass}>
+        <Field label="Mode">
           <div className="space-y-2">
             {SESSION_MODES.map((mode) => (
               <label
@@ -61,7 +55,7 @@ export function SetupMenu({ onStart, disabled }: Props) {
           </div>
         </Field>
 
-        <Field label="Experience level">
+        <Field label="Level">
           <select
             value={config.level}
             onChange={(e) =>
@@ -142,7 +136,9 @@ function Field({
 }) {
   return (
     <div>
-      <label className={`mb-2 block ${eyebrowClass}`}>{label}</label>
+      <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">
+        {label}
+      </label>
       {children}
     </div>
   );

@@ -149,11 +149,7 @@ export const MathDrillSession = forwardRef<MathDrillSessionHandle, Props>(
     }, [answer, checking, current]);
 
     if (loading && !current) {
-      return (
-        <div className={`w-full ${surfaceSoftClass}`}>
-          <p className="text-sm text-[var(--uoft-muted)]">Loading questions…</p>
-        </div>
-      );
+      return null;
     }
 
     if (error && !current) {
@@ -177,11 +173,7 @@ export const MathDrillSession = forwardRef<MathDrillSessionHandle, Props>(
     }
 
     if (!current) {
-      return (
-        <div className={`w-full ${surfaceSoftClass}`}>
-          <p className="text-sm text-[var(--uoft-muted)]">Loading next batch…</p>
-        </div>
-      );
+      return null;
     }
 
     const questionLine = `Q${current.n}: ${current.question}`;
@@ -200,11 +192,6 @@ export const MathDrillSession = forwardRef<MathDrillSessionHandle, Props>(
           busy={checking || fetchingRef.current}
           loading={false}
         />
-        {error && (
-          <p className="text-xs text-[var(--uoft-muted)]">
-            Could not prefetch more questions — you can keep going.
-          </p>
-        )}
       </>
     );
   }

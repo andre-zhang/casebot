@@ -3,7 +3,6 @@
 import { parseMathQuestion } from "@/lib/parse-response";
 import {
   btnPrimaryClass,
-  eyebrowClass,
   inputClass,
   surfaceSoftClass,
 } from "@/lib/ui-classes";
@@ -51,9 +50,8 @@ export function MathDrillPanel({
       <div className={`w-full ${surfaceSoftClass}`}>
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className={eyebrowClass}>{label}</p>
-            <p className="mt-1 text-lg font-semibold leading-snug text-[var(--foreground)]">
-              {text}
+            <p className="text-lg font-semibold leading-snug text-[var(--foreground)]">
+              <span className="text-[var(--uoft-blue)]">{label}</span> {text}
             </p>
           </div>
           {mentalShortcut && (
@@ -72,7 +70,6 @@ export function MathDrillPanel({
         </div>
         {shortcutVisible && mentalShortcut && (
           <p className="mt-3 rounded-sm border border-[var(--uoft-border)]/60 bg-white px-3 py-2 text-sm text-[var(--uoft-muted)]">
-            <span className="font-medium text-[var(--uoft-blue)]">Shortcut: </span>
             {mentalShortcut}
           </p>
         )}
@@ -85,9 +82,6 @@ export function MathDrillPanel({
           onSubmit();
         }}
       >
-        <label htmlFor="math-answer" className={`block ${eyebrowClass}`}>
-          Answer
-        </label>
         <input
           id="math-answer"
           type="text"
@@ -95,9 +89,10 @@ export function MathDrillPanel({
           autoComplete="off"
           value={answer}
           onChange={(e) => onAnswerChange(e.target.value)}
-          placeholder="Enter your answer"
+          placeholder=""
           disabled={busy || loading}
           className={inputClass}
+          aria-label="Answer"
         />
         <button
           type="submit"

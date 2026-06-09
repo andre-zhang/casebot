@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { eyebrowClass, surfaceSoftClass } from "@/lib/ui-classes";
+import { surfaceSoftClass } from "@/lib/ui-classes";
 
 function renderInline(text: string): ReactNode[] {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
@@ -150,8 +150,7 @@ function SimpleMarkdown({ content }: { content: string }) {
 export function FeedbackPanel({ markdown }: { markdown: string }) {
   return (
     <section className={`w-full ${surfaceSoftClass}`}>
-      <p className={eyebrowClass}>Debrief</p>
-      <div className="mt-4 text-sm">
+      <div className="text-sm">
         <SimpleMarkdown content={markdown} />
       </div>
     </section>

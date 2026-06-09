@@ -1,7 +1,7 @@
 "use client";
 
 import type { Exhibit } from "@/lib/session-types";
-import { eyebrowClass, surfaceSoftClass } from "@/lib/ui-classes";
+import { surfaceSoftClass } from "@/lib/ui-classes";
 
 export function CaseExhibit({ exhibit }: { exhibit: Exhibit }) {
   if (exhibit.type === "table") {
@@ -83,7 +83,6 @@ export function ExhibitPanel({ exhibits }: { exhibits: Exhibit[] }) {
 
   return (
     <section className="w-full space-y-3">
-      <p className={eyebrowClass}>Exhibit</p>
       {exhibits.map((exhibit, i) => (
         <CaseExhibit key={`${exhibit.title}-${i}`} exhibit={exhibit} />
       ))}

@@ -25,7 +25,6 @@ import {
   btnDangerClass,
   btnPrimaryClass,
   btnSecondaryClass,
-  eyebrowClass,
   inputClass,
   pageIntroClass,
   statusPillClass,
@@ -295,8 +294,7 @@ export function CaseCoachChat() {
   return (
     <>
       <header className={pageIntroClass}>
-        <p className={eyebrowClass}>Case practice</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[var(--uoft-blue)] sm:text-3xl">
+        <h1 className="text-2xl font-semibold tracking-tight text-[var(--uoft-blue)] sm:text-3xl">
           {sessionTitle}
         </h1>
       </header>
@@ -333,7 +331,9 @@ export function CaseCoachChat() {
 
           {phase === "case" && (
             <section className="flex flex-col items-center gap-5">
-              {!mathDrillMode && <span className={statusPillClass}>{phaseLabel}</span>}
+              <span className={statusPillClass}>
+                {mathDrillMode && awaitingCoach ? "Loading…" : phaseLabel}
+              </span>
 
               {mathDrillMode && config ? (
                 <MathDrillSession ref={mathDrillRef} level={config.level} />
@@ -341,19 +341,8 @@ export function CaseCoachChat() {
                 <>
                   {coachLine && (
                     <div className={`w-full ${surfaceSoftClass}`}>
-                      <p className={eyebrowClass}>Coach</p>
-                      <p className="mt-2 text-sm leading-relaxed text-[var(--foreground)]">
+                      <p className="text-sm leading-relaxed text-[var(--foreground)]">
                         {coachLine}
-                      </p>
-                    </div>
-                  )}
-
-                  {awaitingCoach && (
-                    <div className={`w-full ${surfaceSoftClass}`}>
-                      <p className="text-sm text-[var(--uoft-muted)]">
-                        {liveCaseMode
-                          ? "Setting up your case. This usually takes a few seconds."
-                          : "Starting your session. This usually takes a few seconds."}
                       </p>
                     </div>
                   )}
@@ -378,8 +367,7 @@ export function CaseCoachChat() {
 
                   {(draft || speech.listening) && inLiveCase && (
                     <div className={`w-full ${surfaceSoftClass}`}>
-                      <p className={eyebrowClass}>Your response</p>
-                      <p className="mt-2 text-sm text-[var(--foreground)]">{draft || "…"}</p>
+                      <p className="text-sm text-[var(--foreground)]">{draft || "…"}</p>
                     </div>
                   )}
 
@@ -394,9 +382,10 @@ export function CaseCoachChat() {
                       <input
                         value={draft}
                         onChange={(e) => setTypedDraft(e.target.value)}
-                        placeholder="Type your response…"
+                        placeholder=""
                         disabled={busy || speech.listening}
                         className={inputClass}
+                        aria-label="Response"
                       />
                       <button
                         type="submit"
@@ -413,9 +402,7 @@ export function CaseCoachChat() {
           )}
 
           {phase === "feedback" && debriefBusy && (
-            <p className="text-center text-sm text-[var(--uoft-muted)]">
-              Generating debrief…
-            </p>
+            <span className={`mx-auto ${statusPillClass}`}>Generating debrief…</span>
           )}
 
           {(speech.error || chatError || debriefError) && (

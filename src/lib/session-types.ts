@@ -33,48 +33,13 @@ export type Exhibit =
       unit?: string;
     };
 
-export const SESSION_MODES: {
-  value: SessionMode;
-  label: string;
-  description: string;
-  voice: boolean;
-}[] = [
-  {
-    value: "interviewer-led",
-    label: "Interviewer-led case",
-    description: "Coach drives the case MBB-style.",
-    voice: true,
-  },
-  {
-    value: "candidate-led",
-    label: "Candidate-led case",
-    description: "You lead; coach follows your structure.",
-    voice: true,
-  },
-  {
-    value: "framework",
-    label: "Framework review",
-    description: "Walk through a structure and get critique.",
-    voice: false,
-  },
-  {
-    value: "transcript-review",
-    label: "Transcript feedback",
-    description: "Paste a prior response for debrief.",
-    voice: false,
-  },
-  {
-    value: "market-sizing",
-    label: "Market sizing",
-    description: "Top-down or bottom-up sizing with pushback.",
-    voice: false,
-  },
-  {
-    value: "math-drill",
-    label: "Math drill",
-    description: "Quick mental math — arithmetic, %, ratios, fractions.",
-    voice: false,
-  },
+export const SESSION_MODES: { value: SessionMode; label: string }[] = [
+  { value: "interviewer-led", label: "Interviewer-led case" },
+  { value: "candidate-led", label: "Candidate-led case" },
+  { value: "framework", label: "Framework review" },
+  { value: "transcript-review", label: "Transcript feedback" },
+  { value: "market-sizing", label: "Market sizing" },
+  { value: "math-drill", label: "Math drill" },
 ];
 
 export const INDUSTRIES = [
