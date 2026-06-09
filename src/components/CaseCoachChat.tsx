@@ -13,6 +13,7 @@ import {
 import { parseCoachResponse } from "@/lib/parse-response";
 import {
   isLiveCaseMode,
+  modeIsMathDrill,
   modeUsesVoice,
   sessionModeLabel,
   type Exhibit,
@@ -74,13 +75,16 @@ export function CaseCoachChat() {
   const [activeExhibits, setActiveExhibits] = useState<Exhibit[]>([]);
   const [feedbackMarkdown, setFeedbackMarkdown] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [shortcutVisible, setShortcutVisible] = useState(false);
 
   const lastSpokenIdRef = useRef<string | null>(null);
+  const lastShortcutProblemRef = useRef<string | null>(null);
   const autoMicRef = useRef(false);
 
   const busy = status === "submitted" || status === "streaming";
   const voiceEnabled = config ? modeUsesVoice(config.mode) : false;
   const liveCaseMode = config ? isLiveCaseMode(config.mode) : false;
+  const mathDrillMode = config ? modeIsMathDrill(config.mode) : false;
   const inLiveCase = phase === "case" && voiceEnabled;
 
   useEffect(() => {
@@ -104,6 +108,14 @@ export function CaseCoachChat() {
   );
 
   const coachLine = liveParsed?.spoken ?? "";
+  const mentalShortcut = liveParsed?.mentalShortcut ?? null;
+
+  useEffect(() => {
+    if (!mathDrillMode || !lastAssistant?.id) return;
+    if (lastShortcutProblemRef.current === lastAssistant.id) return;
+    lastShortcutProblemRef.current = lastAssistant.id;
+    setShortcutVisible(false);
+  }, [lastAssistant?.id, mathDrillMode]);
 
   useEffect(() => {
     if (busy || !liveParsed) return;
@@ -155,8 +167,10 @@ export function CaseCoachChat() {
     setActiveExhibits([]);
     setFeedbackMarkdown(null);
     setDraft("");
+    setShortcutVisible(false);
     sessionRef.current.caseBible = null;
     lastSpokenIdRef.current = null;
+    lastShortcutProblemRef.current = null;
     autoMicRef.current = false;
     setPhase("setup");
     setConfig(null);
@@ -303,10 +317,41 @@ export function CaseCoachChat() {
 
               {coachLine && (
                 <div className={`w-full ${surfaceSoftClass}`}>
-                  <p className={eyebrowClass}>Coach</p>
+                  <div className="flex items-start justify-between gap-3">
+                    <p className={eyebrowClass}>
+                      {mathDrillMode ? "Problem" : "Coach"}
+                    </p>
+                    {mathDrillMode && mentalShortcut && (
+                      <button
+                        type="button"
+                        onClick={() => setShortcutVisible((v) => !v)}
+                        aria-label={
+                          shortcutVisible
+                            ? "Hide mental shortcut"
+                            : "Show mental shortcut"
+                        }
+                        title={
+                          shortcutVisible
+                            ? "Hide shortcut"
+                            : "Mental shortcut hint"
+                        }
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[var(--uoft-border)] bg-white text-sm font-semibold text-[var(--uoft-blue)] hover:border-[var(--uoft-blue)]"
+                      >
+                        ?
+                      </button>
+                    )}
+                  </div>
                   <p className="mt-2 text-sm leading-relaxed text-[var(--foreground)]">
                     {coachLine}
                   </p>
+                  {mathDrillMode && shortcutVisible && mentalShortcut && (
+                    <p className="mt-3 rounded-sm border border-[var(--uoft-border)]/60 bg-white px-3 py-2 text-sm text-[var(--uoft-muted)]">
+                      <span className="font-medium text-[var(--uoft-blue)]">
+                        Shortcut:{" "}
+                      </span>
+                      {mentalShortcut}
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -356,7 +401,9 @@ export function CaseCoachChat() {
                   <input
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
-                    placeholder="Type your response…"
+                    placeholder={
+                      mathDrillMode ? "Type your answer…" : "Type your response…"
+                    }
                     disabled={busy || speech.listening}
                     className={inputClass}
                   />

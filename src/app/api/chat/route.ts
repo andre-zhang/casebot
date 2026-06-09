@@ -61,14 +61,20 @@ export async function POST(req: Request) {
     phase === "case" &&
     modelMessages.filter((m) => m.role === "assistant").length === 0;
 
+  const isMathDrill = sessionConfig?.mode === "math-drill";
+
   const maxOutputTokens =
     phase === "feedback"
       ? 2500
       : isLiveCaseStart
         ? 1800
-        : isSessionStart
-          ? 700
-          : 900;
+        : isSessionStart && isMathDrill
+          ? 400
+          : isSessionStart
+            ? 700
+            : isMathDrill
+              ? 350
+              : 900;
 
   const result = streamText({
     model: anthropic(modelId),

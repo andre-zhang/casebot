@@ -3,6 +3,7 @@ export type SessionMode =
   | "candidate-led"
   | "framework"
   | "transcript-review"
+  | "market-sizing"
   | "math-drill";
 
 export type ExperienceLevel = "beginner" | "intermediate" | "advanced";
@@ -63,9 +64,15 @@ export const SESSION_MODES: {
     voice: false,
   },
   {
+    value: "market-sizing",
+    label: "Market sizing",
+    description: "Top-down or bottom-up sizing with pushback.",
+    voice: false,
+  },
+  {
     value: "math-drill",
     label: "Math drill",
-    description: "Market sizing, profitability, or breakeven.",
+    description: "Quick mental math — arithmetic, %, ratios, fractions.",
     voice: false,
   },
 ];
@@ -104,6 +111,20 @@ export function isLiveCaseMode(mode: SessionMode): boolean {
 
 export function sessionModeLabel(mode: SessionMode): string {
   return SESSION_MODES.find((m) => m.value === mode)?.label ?? mode;
+}
+
+export function modeNeedsIndustry(mode: SessionMode): boolean {
+  return (
+    isLiveCaseMode(mode) || mode === "framework" || mode === "market-sizing"
+  );
+}
+
+export function modeNeedsCaseType(mode: SessionMode): boolean {
+  return isLiveCaseMode(mode) || mode === "framework";
+}
+
+export function modeIsMathDrill(mode: SessionMode): boolean {
+  return mode === "math-drill";
 }
 
 export function defaultConfig(): SessionConfig {

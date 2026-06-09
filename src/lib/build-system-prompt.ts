@@ -1,4 +1,4 @@
-import type { SessionConfig, SessionPhase, SessionMode } from "@/lib/session-types";
+import type { SessionConfig, SessionPhase } from "@/lib/session-types";
 import { isLiveCaseMode } from "@/lib/session-types";
 
 const BASE_PROMPT = `You are an expert management consulting case interview coach modeled after McKinsey, BCG, and Bain. You run realistic live cases and deliver sharp, structured feedback.
@@ -109,9 +109,7 @@ export function buildSystemPrompt(
 - Mode: ${config.mode}
 - Experience level: ${config.level}
 - Cases in session: ${config.caseCount}
-- Industry preference: ${config.industry}
-- Case type preference: ${config.caseType}
-- Current phase: ${phase}`;
+${config.mode !== "math-drill" ? `- Industry preference: ${config.industry}\n` : ""}${config.mode === "interviewer-led" || config.mode === "candidate-led" || config.mode === "framework" ? `- Case type preference: ${config.caseType}\n` : ""}- Current phase: ${phase}`;
   }
 
   if (caseBible && phase === "case") {
@@ -134,7 +132,31 @@ Do NOT run a live case. Do NOT use [CASE_BIBLE]. Help the candidate practice str
 
 ## PHASE INSTRUCTIONS — MATH DRILL
 
-Do NOT run a full live case. Do NOT use [CASE_BIBLE]. Present one math problem at a time (market sizing, profitability, or breakeven). Use [SPOKEN] and optional [EXHIBIT]. Push on setup, math, and sanity checks.`;
+Do NOT run a live case. Do NOT use [CASE_BIBLE]. Do NOT use [EXHIBIT]. No industry context, no case narratives.
+
+Present ONE mental math problem at a time — solvable in under sixty seconds in your head. Topics: addition, subtraction, multiplication, division, percentages, ratios, fractions, percent change, weighted averages, and quick estimates.
+
+Every reply during the drill MUST use this format:
+
+[SPOKEN]
+State the problem clearly in one or two sentences. Do not give the answer or walk through the solution.
+[/SPOKEN]
+
+[SHORTCUT]
+One concise mental-math shortcut for THIS problem (e.g. round-and-adjust, factor, benchmark fraction, divide by ten then scale). Practical, not a full solution.
+[/SHORTCUT]
+
+When the candidate answers: if correct, one short acknowledgment then the next problem; if wrong, one sentence on the error and either let them retry (beginner) or move on (intermediate/advanced). Keep replies tight — no essays.
+
+Level: ${config.level} — beginner = cleaner numbers; intermediate = messier numbers and multi-step; advanced = faster pace and combined operations.`;
+    } else if (config.mode === "market-sizing") {
+      prompt += `
+
+## PHASE INSTRUCTIONS — MARKET SIZING
+
+Do NOT run a full live case. Do NOT use [CASE_BIBLE]. Practice market sizing only — top-down, bottom-up, or hybrid.
+
+Use [SPOKEN] for prompts and interviewer pushback. Optional [EXHIBIT] for reference data. Push on structure, assumptions, sanity checks, and order-of-magnitude reasoning. Industry context: ${config.industry}.`;
     } else if (config.mode === "transcript-review") {
       prompt += `
 
@@ -193,14 +215,22 @@ export function buildSessionStartMessage(config: SessionConfig): string {
       return `[SYSTEM: Begin a framework review. Level: ${level}. Case type to structure: ${caseTypeLabel}. Industry context: ${industryLabel}. Do NOT start a live case. In [SPOKEN], ask the candidate to walk you through how they would structure this case type.]`;
     case "transcript-review":
       return `[SYSTEM: Begin a transcript feedback session. Level: ${level}. Do NOT start a case. In [SPOKEN], ask the candidate to paste the response or transcript they want reviewed.]`;
+    case "market-sizing":
+      return `[SYSTEM: Begin a market sizing practice session. Level: ${level}. Industry: ${industryLabel}. Do NOT start a full case. In [SPOKEN], present a market sizing question for that industry. Push on structure, assumptions, and sanity checks.]`;
     case "math-drill":
-      return `[SYSTEM: Begin a math drill. Level: ${level}. Focus area: ${caseTypeLabel}. Do NOT start a full case. In [SPOKEN], present the first math problem. Use [EXHIBIT] if it helps.]`;
+      return `[SYSTEM: Begin a mental math drill. Level: ${level}. Do NOT start a case. Do NOT mention industry. In [SPOKEN], present the first mental math problem. In [SHORTCUT], give a concise mental shortcut for that problem. Topics: arithmetic, percentages, ratios, fractions — doable in your head.]`;
   }
 }
 
 export function buildSessionEndMessage(config: SessionConfig): string {
   if (isLiveCaseMode(config.mode)) {
     return buildCaseEndMessage();
+  }
+  if (config.mode === "math-drill") {
+    return `[SYSTEM: The candidate ended the math drill. Deliver a brief written debrief using only a [FEEDBACK] block — accuracy, speed, types of problems they handled well or poorly, and what to practice next.]`;
+  }
+  if (config.mode === "market-sizing") {
+    return `[SYSTEM: The candidate ended the market sizing session. Deliver a full written debrief using only a [FEEDBACK] block — structure, assumptions, sanity checks, and communication.]`;
   }
   return `[SYSTEM: The candidate ended the session. Deliver a full written debrief for this ${config.mode} session using only a [FEEDBACK] block.]`;
 }

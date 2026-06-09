@@ -5,6 +5,8 @@ import {
   CASE_TYPES,
   defaultConfig,
   INDUSTRIES,
+  modeNeedsCaseType,
+  modeNeedsIndustry,
   SESSION_MODES,
   type SessionConfig,
 } from "@/lib/session-types";
@@ -23,6 +25,8 @@ type Props = {
 
 export function SetupMenu({ onStart, disabled }: Props) {
   const [config, setConfig] = useState(defaultConfig());
+  const showIndustry = modeNeedsIndustry(config.mode);
+  const showCaseType = modeNeedsCaseType(config.mode);
 
   return (
     <section className={`w-full ${surfaceSoftClass}`}>
@@ -74,35 +78,47 @@ export function SetupMenu({ onStart, disabled }: Props) {
           </select>
         </Field>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Industry">
-            <select
-              value={config.industry}
-              onChange={(e) => setConfig({ ...config, industry: e.target.value })}
-              className={inputClass}
-            >
-              {INDUSTRIES.map((i) => (
-                <option key={i} value={i}>
-                  {i}
-                </option>
-              ))}
-            </select>
-          </Field>
+        {(showIndustry || showCaseType) && (
+          <div
+            className={`grid gap-4 ${showIndustry && showCaseType ? "sm:grid-cols-2" : ""}`}
+          >
+            {showIndustry && (
+              <Field label="Industry">
+                <select
+                  value={config.industry}
+                  onChange={(e) =>
+                    setConfig({ ...config, industry: e.target.value })
+                  }
+                  className={inputClass}
+                >
+                  {INDUSTRIES.map((i) => (
+                    <option key={i} value={i}>
+                      {i}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
 
-          <Field label="Case type">
-            <select
-              value={config.caseType}
-              onChange={(e) => setConfig({ ...config, caseType: e.target.value })}
-              className={inputClass}
-            >
-              {CASE_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </div>
+            {showCaseType && (
+              <Field label="Case type">
+                <select
+                  value={config.caseType}
+                  onChange={(e) =>
+                    setConfig({ ...config, caseType: e.target.value })
+                  }
+                  className={inputClass}
+                >
+                  {CASE_TYPES.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
+          </div>
+        )}
       </div>
 
       <button
