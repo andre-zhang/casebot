@@ -5,6 +5,7 @@ import { DefaultChatTransport } from "ai";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ExhibitPanel } from "@/components/CaseExhibit";
 import { FeedbackPanel } from "@/components/FeedbackPanel";
+import { MathDrillPanel } from "@/components/MathDrillPanel";
 import { SetupMenu } from "@/components/SetupMenu";
 import {
   buildSessionEndMessage,
@@ -109,6 +110,7 @@ export function CaseCoachChat() {
 
   const coachLine = liveParsed?.spoken ?? "";
   const mentalShortcut = liveParsed?.mentalShortcut ?? null;
+  const mathResult = liveParsed?.mathResult ?? null;
 
   useEffect(() => {
     if (!mathDrillMode || !lastAssistant?.id) return;
@@ -217,9 +219,10 @@ export function CaseCoachChat() {
       speech.stop();
       speech.reset();
       setDraft("");
-      await sendMessage({ text: trimmed });
+      const payload = mathDrillMode ? `Answer: ${trimmed}` : trimmed;
+      await sendMessage({ text: payload });
     },
-    [busy, phase, sendMessage, speech, stopSpeaking]
+    [busy, mathDrillMode, phase, sendMessage, speech, stopSpeaking]
   );
 
   const toggleMic = useCallback(() => {
@@ -244,6 +247,8 @@ export function CaseCoachChat() {
   const awaitingCoach =
     busy && phase === "case" && !coachLine.trim();
 
+  const mathDrillLoading = mathDrillMode && awaitingCoach;
+
   const sessionTitle =
     phase === "setup"
       ? "Case setup"
@@ -258,19 +263,23 @@ export function CaseCoachChat() {
   const phaseLabel =
     phase === "feedback"
       ? "Debrief ready"
-      : awaitingCoach
-        ? liveCaseMode
-          ? "Preparing case"
-          : "Starting session"
-        : speaking
-          ? "Coach speaking"
-          : busy
-            ? "Coach thinking"
-            : speech.listening
-              ? "Listening"
-              : inLiveCase
-                ? "Your turn"
-                : "In session";
+      : mathDrillMode
+        ? busy
+          ? "Checking…"
+          : "Ready"
+        : awaitingCoach
+          ? liveCaseMode
+            ? "Preparing case"
+            : "Starting session"
+          : speaking
+            ? "Coach speaking"
+            : busy
+              ? "Coach thinking"
+              : speech.listening
+                ? "Listening"
+                : inLiveCase
+                  ? "Your turn"
+                  : "In session";
 
   return (
     <>
@@ -313,108 +322,103 @@ export function CaseCoachChat() {
 
           {phase === "case" && (
             <section className="flex flex-col items-center gap-5">
-              <span className={statusPillClass}>{phaseLabel}</span>
+              {!mathDrillMode && <span className={statusPillClass}>{phaseLabel}</span>}
 
-              {coachLine && (
-                <div className={`w-full ${surfaceSoftClass}`}>
-                  <div className="flex items-start justify-between gap-3">
-                    <p className={eyebrowClass}>
-                      {mathDrillMode ? "Problem" : "Coach"}
-                    </p>
-                    {mathDrillMode && mentalShortcut && (
-                      <button
-                        type="button"
-                        onClick={() => setShortcutVisible((v) => !v)}
-                        aria-label={
-                          shortcutVisible
-                            ? "Hide mental shortcut"
-                            : "Show mental shortcut"
-                        }
-                        title={
-                          shortcutVisible
-                            ? "Hide shortcut"
-                            : "Mental shortcut hint"
-                        }
-                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[var(--uoft-border)] bg-white text-sm font-semibold text-[var(--uoft-blue)] hover:border-[var(--uoft-blue)]"
-                      >
-                        ?
-                      </button>
-                    )}
-                  </div>
-                  <p className="mt-2 text-sm leading-relaxed text-[var(--foreground)]">
-                    {coachLine}
-                  </p>
-                  {mathDrillMode && shortcutVisible && mentalShortcut && (
-                    <p className="mt-3 rounded-sm border border-[var(--uoft-border)]/60 bg-white px-3 py-2 text-sm text-[var(--uoft-muted)]">
-                      <span className="font-medium text-[var(--uoft-blue)]">
-                        Shortcut:{" "}
-                      </span>
-                      {mentalShortcut}
-                    </p>
+              {mathDrillMode ? (
+                <>
+                  {mathDrillLoading && (
+                    <div className={`w-full ${surfaceSoftClass}`}>
+                      <p className="text-sm text-[var(--uoft-muted)]">
+                        Loading question…
+                      </p>
+                    </div>
                   )}
-                </div>
-              )}
+                  {coachLine && !mathDrillLoading && (
+                    <MathDrillPanel
+                      questionLine={coachLine}
+                      resultLine={mathResult}
+                      mentalShortcut={mentalShortcut}
+                      shortcutVisible={shortcutVisible}
+                      onToggleShortcut={() => setShortcutVisible((v) => !v)}
+                      answer={draft}
+                      onAnswerChange={setDraft}
+                      onSubmit={() => void sendDraft(draft)}
+                      busy={busy}
+                      loading={mathDrillLoading}
+                    />
+                  )}
+                </>
+              ) : (
+                <>
+                  {coachLine && (
+                    <div className={`w-full ${surfaceSoftClass}`}>
+                      <p className={eyebrowClass}>Coach</p>
+                      <p className="mt-2 text-sm leading-relaxed text-[var(--foreground)]">
+                        {coachLine}
+                      </p>
+                    </div>
+                  )}
 
-              {awaitingCoach && (
-                <div className={`w-full ${surfaceSoftClass}`}>
-                  <p className="text-sm text-[var(--uoft-muted)]">
-                    {liveCaseMode
-                      ? "Setting up your case. This usually takes a few seconds."
-                      : "Starting your session. This usually takes a few seconds."}
-                  </p>
-                </div>
-              )}
+                  {awaitingCoach && (
+                    <div className={`w-full ${surfaceSoftClass}`}>
+                      <p className="text-sm text-[var(--uoft-muted)]">
+                        {liveCaseMode
+                          ? "Setting up your case. This usually takes a few seconds."
+                          : "Starting your session. This usually takes a few seconds."}
+                      </p>
+                    </div>
+                  )}
 
-              <ExhibitPanel exhibits={activeExhibits} />
+                  <ExhibitPanel exhibits={activeExhibits} />
 
-              {inLiveCase && (
-                <button
-                  type="button"
-                  onClick={toggleMic}
-                  disabled={busy}
-                  aria-label={speech.listening ? "Stop and send" : "Start speaking"}
-                  className={`relative flex h-28 w-28 items-center justify-center rounded-sm border-2 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--uoft-blue)] disabled:opacity-50 ${
-                    speech.listening
-                      ? "border-[var(--uoft-blue)] bg-[var(--uoft-blue)] text-white"
-                      : "border-[var(--uoft-border)] bg-white text-[var(--uoft-blue)] hover:border-[var(--uoft-blue)]"
-                  }`}
-                >
-                  <MicIcon listening={speech.listening} />
-                </button>
-              )}
+                  {inLiveCase && (
+                    <button
+                      type="button"
+                      onClick={toggleMic}
+                      disabled={busy}
+                      aria-label={speech.listening ? "Stop and send" : "Start speaking"}
+                      className={`relative flex h-28 w-28 items-center justify-center rounded-sm border-2 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--uoft-blue)] disabled:opacity-50 ${
+                        speech.listening
+                          ? "border-[var(--uoft-blue)] bg-[var(--uoft-blue)] text-white"
+                          : "border-[var(--uoft-border)] bg-white text-[var(--uoft-blue)] hover:border-[var(--uoft-blue)]"
+                      }`}
+                    >
+                      <MicIcon listening={speech.listening} />
+                    </button>
+                  )}
 
-              {(draft || speech.listening) && inLiveCase && (
-                <div className={`w-full ${surfaceSoftClass}`}>
-                  <p className={eyebrowClass}>Your response</p>
-                  <p className="mt-2 text-sm text-[var(--foreground)]">{draft || "…"}</p>
-                </div>
-              )}
+                  {(draft || speech.listening) && inLiveCase && (
+                    <div className={`w-full ${surfaceSoftClass}`}>
+                      <p className={eyebrowClass}>Your response</p>
+                      <p className="mt-2 text-sm text-[var(--foreground)]">{draft || "…"}</p>
+                    </div>
+                  )}
 
-              {(!inLiveCase || !speech.listening) && (
-                <form
-                  className="flex w-full gap-2"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    void sendDraft(draft);
-                  }}
-                >
-                  <input
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    placeholder={
-                      mathDrillMode ? "Type your answer…" : "Type your response…"
-                    }
-                    disabled={busy || speech.listening}
-                    className={inputClass}
-                  />
-                  <button
-                    type="submit"
-                    disabled={busy || !draft.trim() || speech.listening}
-                    className={btnPrimaryClass}
-                  >
-                    Send
-                  </button>
-                </form>
+                  {(!inLiveCase || !speech.listening) && (
+                    <form
+                      className="flex w-full gap-2"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        void sendDraft(draft);
+                      }}
+                    >
+                      <input
+                        value={draft}
+                        onChange={(e) => setDraft(e.target.value)}
+                        placeholder="Type your response…"
+                        disabled={busy || speech.listening}
+                        className={inputClass}
+                      />
+                      <button
+                        type="submit"
+                        disabled={busy || !draft.trim() || speech.listening}
+                        className={btnPrimaryClass}
+                      >
+                        Send
+                      </button>
+                    </form>
+                  )}
+                </>
               )}
             </section>
           )}

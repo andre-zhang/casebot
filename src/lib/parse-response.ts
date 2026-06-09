@@ -6,6 +6,7 @@ export type ParsedCoachResponse = {
   exhibits: Exhibit[];
   feedbackMarkdown: string | null;
   mentalShortcut: string | null;
+  mathResult: string | null;
   raw: string;
 };
 
@@ -26,13 +27,21 @@ function extractSpoken(raw: string): string {
   const close = afterOpen.indexOf("[/SPOKEN]");
   if (close !== -1) return afterOpen.slice(0, close).trim();
 
-  return afterOpen.replace(/\[(CASE_BIBLE|EXHIBIT|FEEDBACK|SHORTCUT)[\s\S]*/i, "").trim();
+  return afterOpen.replace(/\[(CASE_BIBLE|EXHIBIT|FEEDBACK|SHORTCUT|RESULT)[\s\S]*/i, "").trim();
 }
 
 function stripBlocks(text: string): string {
   return text
-    .replace(/\[(CASE_BIBLE|SPOKEN|EXHIBIT|FEEDBACK|SHORTCUT)\][\s\S]*?\[\/\1\]/gi, "")
+    .replace(/\[(CASE_BIBLE|SPOKEN|EXHIBIT|FEEDBACK|SHORTCUT|RESULT)\][\s\S]*?\[\/\1\]/gi, "")
     .trim();
+}
+
+export function parseMathQuestion(line: string): { label: string; text: string } {
+  const match = line.match(/^Q(\d+):\s*(.+)$/i);
+  if (match) {
+    return { label: `Q${match[1]}`, text: match[2].trim() };
+  }
+  return { label: "Q", text: line.trim() };
 }
 
 function parseExhibit(raw: string): Exhibit | null {
@@ -50,6 +59,7 @@ export function parseCoachResponse(raw: string): ParsedCoachResponse {
   const caseBible = extractBlock(raw, "CASE_BIBLE");
   const feedbackMarkdown = extractBlock(raw, "FEEDBACK");
   const mentalShortcut = extractBlock(raw, "SHORTCUT");
+  const mathResult = extractBlock(raw, "RESULT");
 
   const exhibitMatches = [
     ...raw.matchAll(/\[EXHIBIT\]([\s\S]*?)\[\/EXHIBIT\]/gi),
@@ -66,6 +76,7 @@ export function parseCoachResponse(raw: string): ParsedCoachResponse {
     exhibits,
     feedbackMarkdown,
     mentalShortcut,
+    mathResult,
     raw,
   };
 }

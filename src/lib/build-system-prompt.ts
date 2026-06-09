@@ -132,21 +132,32 @@ Do NOT run a live case. Do NOT use [CASE_BIBLE]. Help the candidate practice str
 
 ## PHASE INSTRUCTIONS — MATH DRILL
 
-Do NOT run a live case. Do NOT use [CASE_BIBLE]. Do NOT use [EXHIBIT]. No industry context, no case narratives.
+Do NOT run a live case. Do NOT use [CASE_BIBLE]. Do NOT use [EXHIBIT]. No industry context, no greetings, no conversational filler.
 
 Present ONE mental math problem at a time — solvable in under sixty seconds in your head. Topics: addition, subtraction, multiplication, division, percentages, ratios, fractions, percent change, weighted averages, and quick estimates.
 
-Every reply during the drill MUST use this format:
+NUMBERS: always use digits and symbols (47%, 200, 3.5, 1/4). NEVER spell out numbers (no "forty-seven" or "two hundred").
+
+Every reply during the drill MUST use this format — no extra text outside tags:
 
 [SPOKEN]
-State the problem clearly in one or two sentences. Do not give the answer or walk through the solution.
+Q{n}: <single question only, one line>
+Example: Q1: What is 47% of 200?
+Example: Q2: What is 15 × 24?
+Increment n each new question. No preamble, no "correct", no explanation in this block.
 [/SPOKEN]
 
 [SHORTCUT]
-One concise mental-math shortcut for THIS problem (e.g. round-and-adjust, factor, benchmark fraction, divide by ten then scale). Practical, not a full solution.
+One concise mental-math shortcut for THIS problem. Use digits, not words.
 [/SHORTCUT]
 
-When the candidate answers: if correct, one short acknowledgment then the next problem; if wrong, one sentence on the error and either let them retry (beginner) or move on (intermediate/advanced). Keep replies tight — no essays.
+After the candidate submits an answer, include a result line then the next question:
+
+[RESULT]
+One short line only: "Correct." OR "Incorrect — 94." OR "Close — exact answer is 94."
+[/RESULT]
+
+Then [SPOKEN] with the next Q{n} and [SHORTCUT] for that new problem. Do not combine feedback into the question line.
 
 Level: ${config.level} — beginner = cleaner numbers; intermediate = messier numbers and multi-step; advanced = faster pace and combined operations.`;
     } else if (config.mode === "market-sizing") {
@@ -218,7 +229,7 @@ export function buildSessionStartMessage(config: SessionConfig): string {
     case "market-sizing":
       return `[SYSTEM: Begin a market sizing practice session. Level: ${level}. Industry: ${industryLabel}. Do NOT start a full case. In [SPOKEN], present a market sizing question for that industry. Push on structure, assumptions, and sanity checks.]`;
     case "math-drill":
-      return `[SYSTEM: Begin a mental math drill. Level: ${level}. Do NOT start a case. Do NOT mention industry. In [SPOKEN], present the first mental math problem. In [SHORTCUT], give a concise mental shortcut for that problem. Topics: arithmetic, percentages, ratios, fractions — doable in your head.]`;
+      return `[SYSTEM: Begin a mental math drill. Level: ${level}. Do NOT start a case. Do NOT mention industry. No conversation — output tags only. In [SPOKEN], write exactly one line: Q1: <question>. Use digits for all numbers (47%, 200, not words). In [SHORTCUT], give a concise mental shortcut using digits.]`;
   }
 }
 
