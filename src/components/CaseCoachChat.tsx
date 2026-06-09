@@ -1,12 +1,12 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ExhibitPanel } from "@/components/CaseExhibit";
 import { FeedbackPanel } from "@/components/FeedbackPanel";
-import { MathDrillPanel } from "@/components/MathDrillPanel";
+import { MathDrillSession, type MathDrillSessionHandle } from "@/components/MathDrillSession";
 import { SetupMenu } from "@/components/SetupMenu";
+import { createCaseCoachTransport } from "@/lib/chat-transport";
 import {
   buildSessionEndMessage,
   buildSessionStartMessage,
@@ -47,23 +47,8 @@ export function CaseCoachChat() {
     caseBible: string | null;
   }>({ phase: "setup", config: null, caseBible: null });
 
-  const transport = useMemo(
-    () =>
-      new DefaultChatTransport({
-        api: "/api/chat",
-        prepareSendMessagesRequest: ({ messages }) => ({
-          body: {
-            messages,
-            phase:
-              sessionRef.current.phase === "setup"
-                ? "case"
-                : sessionRef.current.phase,
-            sessionConfig: sessionRef.current.config,
-            caseBible: sessionRef.current.caseBible,
-          },
-        }),
-      }),
-    []
+  const [transport] = useState(() =>
+    createCaseCoachTransport(() => sessionRef.current)
   );
 
   const { messages, sendMessage, status, setMessages, error: chatError } =
@@ -74,12 +59,13 @@ export function CaseCoachChat() {
   const [phase, setPhase] = useState<SessionPhase>("setup");
   const [config, setConfig] = useState<SessionConfig | null>(null);
   const [activeExhibits, setActiveExhibits] = useState<Exhibit[]>([]);
-  const [feedbackMarkdown, setFeedbackMarkdown] = useState<string | null>(null);
-  const [draft, setDraft] = useState("");
-  const [shortcutVisible, setShortcutVisible] = useState(false);
+  const [mathDebriefMarkdown, setMathDebriefMarkdown] = useState<string | null>(null);
+  const [typedDraft, setTypedDraft] = useState("");
+  const [debriefError, setDebriefError] = useState<string | null>(null);
 
+  const [activeExhibits, setActiveExhibits] = useState<Exhibit[]>([]);
+  const mathDrillRef = useRef<MathDrillSessionHandle>(null);
   const lastSpokenIdRef = useRef<string | null>(null);
-  const lastShortcutProblemRef = useRef<string | null>(null);
   const autoMicRef = useRef(false);
 
   const busy = status === "submitted" || status === "streaming";
@@ -109,25 +95,18 @@ export function CaseCoachChat() {
   );
 
   const coachLine = liveParsed?.spoken ?? "";
-  const mentalShortcut = liveParsed?.mentalShortcut ?? null;
-  const mathResult = liveParsed?.mathResult ?? null;
-
-  useEffect(() => {
-    if (!mathDrillMode || !lastAssistant?.id) return;
-    if (lastShortcutProblemRef.current === lastAssistant.id) return;
-    lastShortcutProblemRef.current = lastAssistant.id;
-    setShortcutVisible(false);
-  }, [lastAssistant?.id, mathDrillMode]);
+  const chatFeedbackMarkdown =
+    phase === "feedback" && !mathDrillMode
+      ? liveParsed?.feedbackMarkdown ?? null
+      : null;
+  const feedbackMarkdown = mathDebriefMarkdown ?? chatFeedbackMarkdown;
+  const draft = speech.listening ? speech.transcript : typedDraft;
 
   useEffect(() => {
     if (busy || !liveParsed) return;
 
     if (liveParsed.caseBible && liveCaseMode) {
       sessionRef.current.caseBible = liveParsed.caseBible;
-    }
-
-    if (phase === "feedback" && liveParsed.feedbackMarkdown) {
-      setFeedbackMarkdown(liveParsed.feedbackMarkdown);
     }
 
     if (phase === "case" && liveParsed.exhibits.length > 0) {
@@ -155,11 +134,8 @@ export function CaseCoachChat() {
     speak,
     speech.listening,
     speech.start,
+    speech,
   ]);
-
-  useEffect(() => {
-    if (speech.listening) setDraft(speech.transcript);
-  }, [speech.transcript, speech.listening]);
 
   const resetSession = useCallback(() => {
     stopSpeaking();
@@ -167,12 +143,11 @@ export function CaseCoachChat() {
     speech.reset();
     setMessages([]);
     setActiveExhibits([]);
-    setFeedbackMarkdown(null);
-    setDraft("");
-    setShortcutVisible(false);
+    setMathDebriefMarkdown(null);
+    setTypedDraft("");
+    setDebriefError(null);
     sessionRef.current.caseBible = null;
     lastSpokenIdRef.current = null;
-    lastShortcutProblemRef.current = null;
     autoMicRef.current = false;
     setPhase("setup");
     setConfig(null);
@@ -189,16 +164,21 @@ export function CaseCoachChat() {
       sessionRef.current.caseBible = null;
       sessionRef.current.phase = "case";
       setPhase("case");
-      setFeedbackMarkdown(null);
+      setMathDebriefMarkdown(null);
       setActiveExhibits([]);
+      setDebriefError(null);
       lastSpokenIdRef.current = null;
+
+      if (modeIsMathDrill(nextConfig.mode)) {
+        return;
+      }
 
       void sendMessage({ text: buildSessionStartMessage(nextConfig) });
     },
     [sendMessage]
   );
 
-  const handleEndCase = useCallback(() => {
+  const handleEndCase = useCallback(async () => {
     if (!config) return;
 
     autoMicRef.current = false;
@@ -206,8 +186,40 @@ export function CaseCoachChat() {
     speech.stop();
     sessionRef.current.phase = "feedback";
     setPhase("feedback");
+    setDebriefError(null);
+
+    if (mathDrillMode) {
+      const stats = mathDrillRef.current?.getStats() ?? {
+        total: 0,
+        correct: 0,
+        missed: [],
+      };
+
+      try {
+        const res = await fetch("/api/math-drill", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "debrief",
+            level: config.level,
+            stats,
+          }),
+        });
+        const data = (await res.json()) as { feedback?: string; error?: string };
+        if (!res.ok) {
+          throw new Error(data.error ?? "Could not generate debrief.");
+        }
+        setMathDebriefMarkdown(data.feedback ?? null);
+      } catch (err) {
+        setDebriefError(
+          err instanceof Error ? err.message : "Could not generate debrief."
+        );
+      }
+      return;
+    }
+
     void sendMessage({ text: buildSessionEndMessage(config) });
-  }, [config, sendMessage, speech, stopSpeaking]);
+  }, [config, mathDrillMode, sendMessage, speech, stopSpeaking]);
 
   const sendDraft = useCallback(
     async (text: string) => {
@@ -218,11 +230,10 @@ export function CaseCoachChat() {
       stopSpeaking();
       speech.stop();
       speech.reset();
-      setDraft("");
-      const payload = mathDrillMode ? `Answer: ${trimmed}` : trimmed;
-      await sendMessage({ text: payload });
+      setTypedDraft("");
+      await sendMessage({ text: trimmed });
     },
-    [busy, mathDrillMode, phase, sendMessage, speech, stopSpeaking]
+    [busy, phase, sendMessage, speech, stopSpeaking]
   );
 
   const toggleMic = useCallback(() => {
@@ -240,14 +251,18 @@ export function CaseCoachChat() {
     }
 
     speech.reset();
-    setDraft("");
+    setTypedDraft("");
     speech.start();
   }, [busy, draft, inLiveCase, sendDraft, speaking, speech, stopSpeaking]);
 
   const awaitingCoach =
-    busy && phase === "case" && !coachLine.trim();
+    busy && phase === "case" && !coachLine.trim() && !mathDrillMode;
 
-  const mathDrillLoading = mathDrillMode && awaitingCoach;
+  const debriefBusy =
+    phase === "feedback" &&
+    !feedbackMarkdown &&
+    !debriefError &&
+    (mathDrillMode || busy);
 
   const sessionTitle =
     phase === "setup"
@@ -263,23 +278,19 @@ export function CaseCoachChat() {
   const phaseLabel =
     phase === "feedback"
       ? "Debrief ready"
-      : mathDrillMode
-        ? busy
-          ? "Checking…"
-          : "Ready"
-        : awaitingCoach
-          ? liveCaseMode
-            ? "Preparing case"
-            : "Starting session"
-          : speaking
-            ? "Coach speaking"
-            : busy
-              ? "Coach thinking"
-              : speech.listening
-                ? "Listening"
-                : inLiveCase
-                  ? "Your turn"
-                  : "In session";
+      : awaitingCoach
+        ? liveCaseMode
+          ? "Preparing case"
+          : "Starting session"
+        : speaking
+          ? "Coach speaking"
+          : busy
+            ? "Coach thinking"
+            : speech.listening
+              ? "Listening"
+              : inLiveCase
+                ? "Your turn"
+                : "In session";
 
   return (
     <>
@@ -324,30 +335,8 @@ export function CaseCoachChat() {
             <section className="flex flex-col items-center gap-5">
               {!mathDrillMode && <span className={statusPillClass}>{phaseLabel}</span>}
 
-              {mathDrillMode ? (
-                <>
-                  {mathDrillLoading && (
-                    <div className={`w-full ${surfaceSoftClass}`}>
-                      <p className="text-sm text-[var(--uoft-muted)]">
-                        Loading question…
-                      </p>
-                    </div>
-                  )}
-                  {coachLine && !mathDrillLoading && (
-                    <MathDrillPanel
-                      questionLine={coachLine}
-                      resultLine={mathResult}
-                      mentalShortcut={mentalShortcut}
-                      shortcutVisible={shortcutVisible}
-                      onToggleShortcut={() => setShortcutVisible((v) => !v)}
-                      answer={draft}
-                      onAnswerChange={setDraft}
-                      onSubmit={() => void sendDraft(draft)}
-                      busy={busy}
-                      loading={mathDrillLoading}
-                    />
-                  )}
-                </>
+              {mathDrillMode && config ? (
+                <MathDrillSession ref={mathDrillRef} level={config.level} />
               ) : (
                 <>
                   {coachLine && (
@@ -404,7 +393,7 @@ export function CaseCoachChat() {
                     >
                       <input
                         value={draft}
-                        onChange={(e) => setDraft(e.target.value)}
+                        onChange={(e) => setTypedDraft(e.target.value)}
                         placeholder="Type your response…"
                         disabled={busy || speech.listening}
                         className={inputClass}
@@ -423,15 +412,15 @@ export function CaseCoachChat() {
             </section>
           )}
 
-          {phase === "feedback" && !feedbackMarkdown && busy && (
+          {phase === "feedback" && debriefBusy && (
             <p className="text-center text-sm text-[var(--uoft-muted)]">
               Generating debrief…
             </p>
           )}
 
-          {(speech.error || chatError) && (
+          {(speech.error || chatError || debriefError) && (
             <p className="rounded-sm border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
-              {speech.error || chatError?.message}
+              {debriefError || speech.error || chatError?.message}
             </p>
           )}
         </>

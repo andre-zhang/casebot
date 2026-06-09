@@ -194,16 +194,12 @@ export function useSpeechInput() {
   const [listening, setListening] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [interim, setInterim] = useState("");
-  const [supported, setSupported] = useState(false);
+  const [supported] = useState(() => Boolean(getSpeechRecognitionCtor()));
   const [error, setError] = useState<string | null>(null);
 
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const wantListeningRef = useRef(false);
   const finalBufferRef = useRef("");
-
-  useEffect(() => {
-    setSupported(Boolean(getSpeechRecognitionCtor()));
-  }, []);
 
   const stop = useCallback(() => {
     wantListeningRef.current = false;

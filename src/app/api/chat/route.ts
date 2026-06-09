@@ -1,13 +1,12 @@
 import { anthropic } from "@ai-sdk/anthropic";
 import { convertToModelMessages, streamText, type UIMessage } from "ai";
+import { resolveModelId } from "@/lib/anthropic-model";
 import { buildSystemPrompt } from "@/lib/build-system-prompt";
+import { pruneModelMessages } from "@/lib/prune-messages";
 import { checkRateLimit, clientIp } from "@/lib/rate-limit";
 import { isLiveCaseMode, type SessionConfig, type SessionPhase } from "@/lib/session-types";
 
 export const maxDuration = 60;
-
-const modelId =
-  process.env.ANTHROPIC_MODEL?.trim() || "claude-sonnet-4-6";
 
 type ChatRequestBody = {
   messages: UIMessage[];
@@ -49,35 +48,49 @@ export async function POST(req: Request) {
   const { messages, phase = "case", sessionConfig = null, caseBible = null } =
     body;
 
-  const modelMessages = await convertToModelMessages(messages);
+  if (sessionConfig?.mode === "math-drill") {
+    return new Response(
+      JSON.stringify({ error: "Math drill uses /api/math-drill." }),
+      { status: 400, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
+  const hasCaseBible = Boolean(caseBible);
+  const modelMessages = pruneModelMessages(
+    await convertToModelMessages(messages),
+    { phase, hasCaseBible }
+  );
+
+  const isLiveCase =
+    sessionConfig !== null && isLiveCaseMode(sessionConfig.mode);
 
   const isLiveCaseStart =
     phase === "case" &&
-    sessionConfig !== null &&
-    isLiveCaseMode(sessionConfig.mode) &&
+    isLiveCase &&
     modelMessages.filter((m) => m.role === "assistant").length === 0;
+
+  const isLiveCaseTurn =
+    phase === "case" && isLiveCase && hasCaseBible;
 
   const isSessionStart =
     phase === "case" &&
     modelMessages.filter((m) => m.role === "assistant").length === 0;
 
-  const isMathDrill = sessionConfig?.mode === "math-drill";
-
   const maxOutputTokens =
     phase === "feedback"
-      ? 2500
+      ? isLiveCase
+        ? 1600
+        : 1200
       : isLiveCaseStart
-        ? 1800
-        : isSessionStart && isMathDrill
-          ? 400
+        ? 1400
+        : isLiveCaseTurn
+          ? 500
           : isSessionStart
-            ? 700
-            : isMathDrill
-              ? 350
-              : 900;
+            ? 550
+            : 650;
 
   const result = streamText({
-    model: anthropic(modelId),
+    model: anthropic(resolveModelId()),
     system: buildSystemPrompt(sessionConfig, phase, caseBible),
     messages: modelMessages,
     maxOutputTokens,
