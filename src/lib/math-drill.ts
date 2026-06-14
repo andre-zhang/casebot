@@ -122,7 +122,14 @@ export function buildMathBatchPrompt(
   startN: number,
   count: number
 ): string {
-  return `Level: ${level}. Number questions Q${startN} through Q${startN + count - 1}. Generate exactly ${count} unique mental math problems. Use digits only (47%, 200, 3.5). Solvable in under 60 seconds. Mix arithmetic, %, ratios, and fractions.`;
+  const levelNote =
+    level === "beginner"
+      ? "Mostly single-step; very round numbers."
+      : level === "intermediate"
+        ? "Mix single- and two-step; mostly round numbers; occasional basic long multiplication."
+        : "Include some two-step problems and sporadic basic long multiplication; still no calculator.";
+
+  return `Level: ${level}. Number questions Q${startN} through Q${startN + count - 1}. Generate exactly ${count} unique mental math problems. Use digits only (47%, 200, 3.5). No calculator — solvable mentally in ~60-90 seconds with shortcuts. ${levelNote} Each "s" should teach a shortcut (round, factor, benchmark).`;
 }
 
 export function buildMathDebriefPrompt(

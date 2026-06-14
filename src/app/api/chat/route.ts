@@ -13,6 +13,7 @@ type ChatRequestBody = {
   phase?: SessionPhase;
   sessionConfig?: SessionConfig | null;
   caseBible?: string | null;
+  elapsedMinutes?: number;
 };
 
 export async function POST(req: Request) {
@@ -45,7 +46,7 @@ export async function POST(req: Request) {
     });
   }
 
-  const { messages, phase = "case", sessionConfig = null, caseBible = null } =
+  const { messages, phase = "case", sessionConfig = null, caseBible = null, elapsedMinutes = 0 } =
     body;
 
   if (sessionConfig?.mode === "math-drill") {
@@ -84,14 +85,14 @@ export async function POST(req: Request) {
       : isLiveCaseStart
         ? 1400
         : isLiveCaseTurn
-          ? 500
+          ? 280
           : isSessionStart
             ? 550
             : 650;
 
   const result = streamText({
     model: anthropic(resolveModelId()),
-    system: buildSystemPrompt(sessionConfig, phase, caseBible),
+    system: buildSystemPrompt(sessionConfig, phase, caseBible, elapsedMinutes),
     messages: modelMessages,
     maxOutputTokens,
   });

@@ -1,6 +1,10 @@
-const DEFAULT_MODEL =
-  process.env.ANTHROPIC_MODEL?.trim() || "claude-3-5-haiku-latest";
+/** Default for all coach + math-drill calls — keep on Haiku for cost. */
+export const HAIKU_MODEL = "claude-haiku-4-5";
 
 export function resolveModelId(): string {
-  return DEFAULT_MODEL;
+  const env = process.env.ANTHROPIC_MODEL?.trim();
+  if (env && /haiku/i.test(env)) {
+    return env;
+  }
+  return HAIKU_MODEL;
 }

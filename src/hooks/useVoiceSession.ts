@@ -2,39 +2,86 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-function pickBestVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
-  const english = voices.filter((v) => v.lang.startsWith("en"));
-  const preferredNames = [
-    "Jenny Online",
-    "Jenny",
-    "Aria",
-    "Sonia Online",
-    "Sonia",
-    "Guy Online",
-    "Guy",
-    "Microsoft Aria",
-    "Microsoft Jenny",
-    "Natural",
-    "Neural",
-    "Google US English",
-  ];
+function scoreVoice(voice: SpeechSynthesisVoice): number {
+  const name = voice.name.toLowerCase();
+  const lang = voice.lang.toLowerCase();
+  let score = 0;
 
-  for (const hint of preferredNames) {
-    const match = english.find((v) => v.name.includes(hint));
-    if (match) return match;
+  if (lang.startsWith("en-us")) score += 40;
+  else if (lang.startsWith("en")) score += 25;
+
+  if (name.includes("neural")) score += 50;
+  if (name.includes("natural")) score += 35;
+  if (name.includes("online")) score += 30;
+  if (name.includes("premium")) score += 25;
+
+  const preferred = [
+    "jenny online",
+    "aria online",
+    "sonia online",
+    "guy online",
+    "microsoft jenny",
+    "microsoft aria",
+    "microsoft guy",
+    "google us english",
+    "samantha",
+    "daniel",
+  ];
+  for (let i = 0; i < preferred.length; i += 1) {
+    if (name.includes(preferred[i]!)) {
+      score += 60 - i * 3;
+      break;
+    }
   }
 
-  const online = english.find((v) => v.name.includes("Online"));
-  if (online) return online;
+  if (voice.localService === false) score += 10;
+  if (name.includes("compact") || name.includes("mobile")) score -= 20;
 
-  return english[0] ?? voices[0] ?? null;
+  return score;
 }
 
-function splitSentences(text: string): string[] {
+function pickBestVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
+  if (voices.length === 0) return null;
+
+  const english = voices.filter((v) => v.lang.startsWith("en"));
+  const pool = english.length > 0 ? english : voices;
+
+  return pool.reduce((best, voice) =>
+    scoreVoice(voice) > scoreVoice(best) ? voice : best
+  );
+}
+
+function prepareTextForSpeech(text: string): string {
   return text
-    .split(/(?<=[.!?])\s+/)
+    .replace(/\$/g, " dollars ")
+    .replace(/(\d)\s*%/g, "$1 percent")
+    .replace(/\bvs\.?\b/gi, "versus")
+    .replace(/\be\.g\.\b/gi, "for example")
+    .replace(/\bi\.e\.\b/gi, "that is")
+    .replace(/\betc\.\b/gi, "and so on")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function splitForSpeech(text: string): string[] {
+  const prepared = prepareTextForSpeech(text);
+  const chunks = prepared
+    .split(/(?<=[.!?;])\s+|,\s+(?=(?:and|but|so|which|who|where|when)\s)/i)
     .map((s) => s.trim())
     .filter(Boolean);
+
+  if (chunks.length <= 1) return chunks.length ? chunks : [prepared];
+
+  const merged: string[] = [];
+  for (const chunk of chunks) {
+    const prev = merged[merged.length - 1];
+    if (prev && prev.length < 40 && chunk.length < 40) {
+      merged[merged.length - 1] = `${prev} ${chunk}`;
+    } else {
+      merged.push(chunk);
+    }
+  }
+  return merged;
 }
 
 function waitForVoices(timeoutMs = 1500): Promise<SpeechSynthesisVoice[]> {
@@ -84,10 +131,17 @@ export function unlockSpeechOutput(): void {
   });
 }
 
+export type SpeakOptions = {
+  onStart?: () => void;
+  onComplete?: () => void;
+};
+
 export function useSpeechOutput() {
   const [speaking, setSpeaking] = useState(false);
   const voiceRef = useRef<SpeechSynthesisVoice | null>(null);
   const onCompleteRef = useRef<(() => void) | null>(null);
+  const onStartRef = useRef<(() => void) | null>(null);
+  const startedRef = useRef(false);
 
   useEffect(() => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
@@ -108,29 +162,35 @@ export function useSpeechOutput() {
     window.speechSynthesis.cancel();
     setSpeaking(false);
     onCompleteRef.current = null;
+    onStartRef.current = null;
+    startedRef.current = false;
   }, []);
 
   const speak = useCallback(
-    (text: string, onComplete?: () => void) =>
+    (text: string, options?: SpeakOptions) =>
       new Promise<void>((resolve) => {
         if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-          onComplete?.();
+          options?.onStart?.();
+          options?.onComplete?.();
           resolve();
           return;
         }
 
         const trimmed = text.trim();
         if (!trimmed) {
-          onComplete?.();
+          options?.onStart?.();
+          options?.onComplete?.();
           resolve();
           return;
         }
 
         stop();
+        startedRef.current = false;
         onCompleteRef.current = () => {
-          onComplete?.();
+          options?.onComplete?.();
           resolve();
         };
+        onStartRef.current = options?.onStart ?? null;
 
         void waitForVoices().then((voices) => {
           window.speechSynthesis.resume();
@@ -138,37 +198,48 @@ export function useSpeechOutput() {
             voiceRef.current = pickBestVoice(voices);
           }
 
-          const sentences = splitSentences(trimmed);
-          const queue = sentences.length > 0 ? sentences : [trimmed];
+          const queue = splitForSpeech(trimmed);
           let index = 0;
+
+          const finish = () => {
+            setSpeaking(false);
+            const done = onCompleteRef.current;
+            onCompleteRef.current = null;
+            onStartRef.current = null;
+            done?.();
+          };
 
           const speakNext = () => {
             if (index >= queue.length) {
-              setSpeaking(false);
-              const done = onCompleteRef.current;
-              onCompleteRef.current = null;
-              done?.();
+              finish();
               return;
             }
 
             const utterance = new SpeechSynthesisUtterance(queue[index]);
             index += 1;
-            utterance.rate = 0.92;
-            utterance.pitch = 0.98;
+            utterance.rate = 0.96;
+            utterance.pitch = 1;
             utterance.lang = "en-US";
             if (voiceRef.current) {
               utterance.voice = voiceRef.current;
             }
 
-            utterance.onstart = () => setSpeaking(true);
+            utterance.onstart = () => {
+              if (!startedRef.current) {
+                startedRef.current = true;
+                onStartRef.current?.();
+              }
+              setSpeaking(true);
+            };
             utterance.onend = () => {
-              window.setTimeout(speakNext, 140);
+              window.setTimeout(speakNext, index >= queue.length ? 0 : 220);
             };
             utterance.onerror = () => {
-              setSpeaking(false);
-              const done = onCompleteRef.current;
-              onCompleteRef.current = null;
-              done?.();
+              if (!startedRef.current) {
+                startedRef.current = true;
+                onStartRef.current?.();
+              }
+              finish();
             };
 
             window.speechSynthesis.speak(utterance);

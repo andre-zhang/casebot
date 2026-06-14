@@ -44,7 +44,8 @@ export function CaseCoachChat() {
     phase: SessionPhase;
     config: SessionConfig | null;
     caseBible: string | null;
-  }>({ phase: "setup", config: null, caseBible: null });
+    caseStartedAt: number | null;
+  }>({ phase: "setup", config: null, caseBible: null, caseStartedAt: null });
 
   const [transport] = useState(() =>
     createCaseCoachTransport(() => sessionRef.current)
@@ -61,8 +62,8 @@ export function CaseCoachChat() {
   const [mathDebriefMarkdown, setMathDebriefMarkdown] = useState<string | null>(null);
   const [typedDraft, setTypedDraft] = useState("");
   const [debriefError, setDebriefError] = useState<string | null>(null);
+  const [spokenVisibleId, setSpokenVisibleId] = useState<string | null>(null);
 
-  const [activeExhibits, setActiveExhibits] = useState<Exhibit[]>([]);
   const mathDrillRef = useRef<MathDrillSessionHandle>(null);
   const lastSpokenIdRef = useRef<string | null>(null);
   const autoMicRef = useRef(false);
@@ -94,6 +95,9 @@ export function CaseCoachChat() {
   );
 
   const coachLine = liveParsed?.spoken ?? "";
+  const showCoachLine = inLiveCase
+    ? lastAssistant?.id === spokenVisibleId && Boolean(coachLine)
+    : Boolean(coachLine);
   const chatFeedbackMarkdown =
     phase === "feedback" && !mathDrillMode
       ? liveParsed?.feedbackMarkdown ?? null
@@ -120,10 +124,14 @@ export function CaseCoachChat() {
 
     lastSpokenIdRef.current = lastAssistant.id;
     autoMicRef.current = true;
-    void speak(coachLine, () => {
-      if (autoMicRef.current && !speech.listening) {
-        speech.start();
-      }
+    void speak(coachLine, {
+      onStart: () => setSpokenVisibleId(lastAssistant.id),
+      onComplete: () => {
+        setSpokenVisibleId(lastAssistant.id);
+        if (autoMicRef.current && !speech.listening) {
+          speech.start();
+        }
+      },
     });
   }, [
     lastAssistant,
@@ -146,8 +154,10 @@ export function CaseCoachChat() {
     setTypedDraft("");
     setDebriefError(null);
     sessionRef.current.caseBible = null;
+    sessionRef.current.caseStartedAt = null;
     lastSpokenIdRef.current = null;
     autoMicRef.current = false;
+    setSpokenVisibleId(null);
     setPhase("setup");
     setConfig(null);
   }, [setMessages, speech, stopSpeaking]);
@@ -161,11 +171,13 @@ export function CaseCoachChat() {
       setConfig(nextConfig);
       sessionRef.current.config = nextConfig;
       sessionRef.current.caseBible = null;
+      sessionRef.current.caseStartedAt = Date.now();
       sessionRef.current.phase = "case";
       setPhase("case");
       setMathDebriefMarkdown(null);
       setActiveExhibits([]);
       setDebriefError(null);
+      setSpokenVisibleId(null);
       lastSpokenIdRef.current = null;
 
       if (modeIsMathDrill(nextConfig.mode)) {
@@ -257,6 +269,13 @@ export function CaseCoachChat() {
   const awaitingCoach =
     busy && phase === "case" && !coachLine.trim() && !mathDrillMode;
 
+  const awaitingSpeech =
+    inLiveCase &&
+    !busy &&
+    Boolean(coachLine) &&
+    lastAssistant?.id !== spokenVisibleId &&
+    !speaking;
+
   const debriefBusy =
     phase === "feedback" &&
     !feedbackMarkdown &&
@@ -281,7 +300,7 @@ export function CaseCoachChat() {
         ? liveCaseMode
           ? "Preparing case"
           : "Starting session"
-        : speaking
+        : speaking || awaitingSpeech
           ? "Coach speaking"
           : busy
             ? "Coach thinking"
@@ -339,7 +358,7 @@ export function CaseCoachChat() {
                 <MathDrillSession ref={mathDrillRef} level={config.level} />
               ) : (
                 <>
-                  {coachLine && (
+                  {showCoachLine && (
                     <div className={`w-full ${surfaceSoftClass}`}>
                       <p className="text-sm leading-relaxed text-[var(--foreground)]">
                         {coachLine}
