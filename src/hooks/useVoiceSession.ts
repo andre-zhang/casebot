@@ -111,16 +111,6 @@ export function unlockSpeechOutput(): void {
   const silent = new Audio(SILENT_WAV);
   silent.volume = 0.01;
   void silent.play().catch(() => {});
-
-  if (!("speechSynthesis" in window)) return;
-  window.speechSynthesis.resume();
-  void waitForVoices(500).then((voices) => {
-    if (voices.length === 0) return;
-    const utterance = new SpeechSynthesisUtterance(" ");
-    utterance.volume = 0.01;
-    window.speechSynthesis.speak(utterance);
-    window.speechSynthesis.cancel();
-  });
 }
 
 export type SpeakOptions = {
@@ -128,11 +118,15 @@ export type SpeakOptions = {
   onComplete?: () => void;
 };
 
-async function synthesizeNeuralSpeech(text: string): Promise<Blob | null> {
+async function synthesizeNeuralSpeech(
+  text: string,
+  signal: AbortSignal
+): Promise<Blob | null> {
   const response = await fetch("/api/tts", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text }),
+    signal,
   });
 
   if (!response.ok) return null;
@@ -142,29 +136,40 @@ async function synthesizeNeuralSpeech(text: string): Promise<Blob | null> {
 function speakWithBrowser(
   text: string,
   voice: SpeechSynthesisVoice | null,
+  isActive: () => boolean,
   callbacks: {
     onStart?: () => void;
     onComplete?: () => void;
     setSpeaking: (value: boolean) => void;
   }
 ): void {
+  if (!isActive()) return;
+
   if (typeof window === "undefined" || !("speechSynthesis" in window)) {
     callbacks.onStart?.();
     callbacks.onComplete?.();
     return;
   }
 
+  window.speechSynthesis.cancel();
   window.speechSynthesis.resume();
+
   const queue = splitForSpeech(text);
   let index = 0;
   let started = false;
 
   const finish = () => {
+    if (!isActive()) return;
     callbacks.setSpeaking(false);
     callbacks.onComplete?.();
   };
 
   const speakNext = () => {
+    if (!isActive()) {
+      window.speechSynthesis.cancel();
+      return;
+    }
+
     if (index >= queue.length) {
       finish();
       return;
@@ -178,6 +183,10 @@ function speakWithBrowser(
     if (voice) utterance.voice = voice;
 
     utterance.onstart = () => {
+      if (!isActive()) {
+        window.speechSynthesis.cancel();
+        return;
+      }
       if (!started) {
         started = true;
         callbacks.onStart?.();
@@ -185,9 +194,11 @@ function speakWithBrowser(
       callbacks.setSpeaking(true);
     };
     utterance.onend = () => {
+      if (!isActive()) return;
       window.setTimeout(speakNext, index >= queue.length ? 0 : 220);
     };
     utterance.onerror = () => {
+      if (!isActive()) return;
       if (!started) {
         started = true;
         callbacks.onStart?.();
@@ -207,6 +218,7 @@ export function useSpeechOutput() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const objectUrlRef = useRef<string | null>(null);
   const generationRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
@@ -223,9 +235,13 @@ export function useSpeechOutput() {
   }, []);
 
   const cleanupAudio = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.src = "";
+    const audio = audioRef.current;
+    if (audio) {
+      audio.onplay = null;
+      audio.onended = null;
+      audio.onerror = null;
+      audio.pause();
+      audio.src = "";
       audioRef.current = null;
     }
     if (objectUrlRef.current) {
@@ -236,6 +252,8 @@ export function useSpeechOutput() {
 
   const stop = useCallback(() => {
     generationRef.current += 1;
+    abortRef.current?.abort();
+    abortRef.current = null;
     cleanupAudio();
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
@@ -254,49 +272,56 @@ export function useSpeechOutput() {
 
       stop();
       const generation = generationRef.current;
+      const isActive = () => generationRef.current === generation;
+      const controller = new AbortController();
+      abortRef.current = controller;
 
       return new Promise<void>((resolve) => {
         const finish = () => {
-          if (generationRef.current !== generation) return;
+          if (!isActive()) return;
           setSpeaking(false);
           options?.onComplete?.();
           resolve();
         };
 
         const markStarted = () => {
-          if (generationRef.current !== generation) return;
+          if (!isActive()) return;
           options?.onStart?.();
           setSpeaking(true);
         };
 
         const fallbackToBrowser = async () => {
-          if (generationRef.current !== generation) return;
+          if (!isActive()) return;
 
           const voices =
             typeof window !== "undefined" && "speechSynthesis" in window
               ? await waitForVoices()
               : [];
+          if (!isActive()) return;
+
           if (voices.length > 0) {
             voiceRef.current = pickBestVoice(voices);
           }
 
-          speakWithBrowser(trimmed, voiceRef.current, {
+          speakWithBrowser(trimmed, voiceRef.current, isActive, {
             onStart: options?.onStart,
             onComplete: () => {
-              if (generationRef.current !== generation) return;
+              if (!isActive()) return;
               finish();
             },
             setSpeaking: (value) => {
-              if (generationRef.current !== generation) return;
+              if (!isActive()) return;
               setSpeaking(value);
             },
           });
         };
 
         void (async () => {
+          let neuralStarted = false;
+
           try {
-            const blob = await synthesizeNeuralSpeech(trimmed);
-            if (generationRef.current !== generation) return;
+            const blob = await synthesizeNeuralSpeech(trimmed, controller.signal);
+            if (!isActive()) return;
 
             if (blob && blob.size > 0) {
               const url = URL.createObjectURL(blob);
@@ -304,13 +329,22 @@ export function useSpeechOutput() {
               const audio = new Audio(url);
               audioRef.current = audio;
 
-              audio.onplay = () => markStarted();
+              audio.onplay = () => {
+                neuralStarted = true;
+                markStarted();
+              };
               audio.onended = () => {
+                if (!isActive()) return;
                 cleanupAudio();
                 finish();
               };
               audio.onerror = () => {
+                if (!isActive()) return;
                 cleanupAudio();
+                if (neuralStarted) {
+                  finish();
+                  return;
+                }
                 void fallbackToBrowser();
               };
 
@@ -319,14 +353,17 @@ export function useSpeechOutput() {
                 return;
               } catch {
                 cleanupAudio();
+                if (!isActive()) return;
                 await fallbackToBrowser();
                 return;
               }
             }
           } catch {
-            // Fall through to browser TTS.
+            if (controller.signal.aborted) return;
+            if (!isActive()) return;
           }
 
+          if (!isActive() || neuralStarted) return;
           await fallbackToBrowser();
         })();
       });

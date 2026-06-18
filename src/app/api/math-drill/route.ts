@@ -45,13 +45,6 @@ export async function POST(req: Request) {
     );
   }
 
-  if (!process.env.ANTHROPIC_API_KEY?.trim()) {
-    return new Response(
-      JSON.stringify({ error: "Server is missing ANTHROPIC_API_KEY." }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
-    );
-  }
-
   let body: MathDrillBody;
   try {
     body = (await req.json()) as MathDrillBody;
@@ -60,6 +53,20 @@ export async function POST(req: Request) {
       status: 400,
       headers: { "Content-Type": "application/json" },
     });
+  }
+
+  if (body.action !== "batch" && body.action !== "debrief") {
+    return new Response(JSON.stringify({ error: "Unknown action." }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  if (!process.env.ANTHROPIC_API_KEY?.trim()) {
+    return new Response(
+      JSON.stringify({ error: "Server is missing ANTHROPIC_API_KEY." }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
   }
 
   if (body.action === "batch") {
@@ -77,7 +84,13 @@ export async function POST(req: Request) {
 
     if (questions.length === 0) {
       return new Response(
-        JSON.stringify({ error: "Could not generate questions. Try again." }),
+        JSON.stringify({
+          error: "Could not generate questions. Try again.",
+          debug:
+            process.env.NODE_ENV === "development"
+              ? result.text.slice(0, 400)
+              : undefined,
+        }),
         { status: 502, headers: { "Content-Type": "application/json" } }
       );
     }
@@ -85,22 +98,15 @@ export async function POST(req: Request) {
     return Response.json({ questions });
   }
 
-  if (body.action === "debrief") {
-    const result = await generateText({
-      model: anthropic(resolveModelId()),
-      system: MATH_DEBRIEF_SYSTEM,
-      prompt: buildMathDebriefPrompt(body.level, body.stats),
-      maxOutputTokens: 700,
-    });
-
-    const parsed = parseCoachResponse(result.text);
-    const feedback = parsed.feedbackMarkdown ?? result.text.trim();
-
-    return Response.json({ feedback });
-  }
-
-  return new Response(JSON.stringify({ error: "Unknown action." }), {
-    status: 400,
-    headers: { "Content-Type": "application/json" },
+  const result = await generateText({
+    model: anthropic(resolveModelId()),
+    system: MATH_DEBRIEF_SYSTEM,
+    prompt: buildMathDebriefPrompt(body.level, body.stats),
+    maxOutputTokens: 700,
   });
+
+  const parsed = parseCoachResponse(result.text);
+  const feedback = parsed.feedbackMarkdown ?? result.text.trim();
+
+  return Response.json({ feedback });
 }

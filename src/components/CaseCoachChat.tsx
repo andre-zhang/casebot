@@ -32,11 +32,29 @@ import {
 } from "@/lib/ui-classes";
 import { unlockSpeechOutput, useSpeechInput, useSpeechOutput } from "@/hooks/useVoiceSession";
 
-function messageText(parts: { type: string; text?: string }[]): string {
+function messageText(parts: { type: string; text?: string }[] | undefined): string {
+  if (!parts) return "";
   return parts
     .filter((part) => part.type === "text" && part.text)
     .map((part) => part.text)
     .join("");
+}
+
+function isSessionEndUserMessage(text: string): boolean {
+  return /\[SYSTEM:.*(End case|ended the)/i.test(text);
+}
+
+function findDebriefAssistantMessage(
+  messages: { role: string; parts?: { type: string; text?: string }[] }[]
+) {
+  const endIdx = messages.findLastIndex(
+    (m) => m.role === "user" && isSessionEndUserMessage(messageText(m.parts))
+  );
+  if (endIdx === -1) return null;
+
+  return (
+    messages.slice(endIdx + 1).find((m) => m.role === "assistant") ?? null
+  );
 }
 
 export function CaseCoachChat() {
@@ -79,6 +97,26 @@ export function CaseCoachChat() {
     sessionRef.current.config = config;
   }, [phase, config]);
 
+  const debriefAssistant = useMemo(
+    () => (phase === "feedback" ? findDebriefAssistantMessage(messages) : null),
+    [messages, phase]
+  );
+
+  const debriefAssistantRaw = useMemo(
+    () => (debriefAssistant ? messageText(debriefAssistant.parts) : ""),
+    [debriefAssistant]
+  );
+
+  const debriefParsed = useMemo(
+    () =>
+      debriefAssistantRaw
+        ? parseCoachResponse(debriefAssistantRaw, {
+            allowPartialFeedback: busy,
+          })
+        : null,
+    [debriefAssistantRaw, busy]
+  );
+
   const lastAssistant = useMemo(
     () => [...messages].reverse().find((m) => m.role === "assistant"),
     [messages]
@@ -100,9 +138,16 @@ export function CaseCoachChat() {
     : Boolean(coachLine);
   const chatFeedbackMarkdown =
     phase === "feedback" && !mathDrillMode
-      ? liveParsed?.feedbackMarkdown ?? null
+      ? debriefParsed?.feedbackMarkdown ?? null
       : null;
   const feedbackMarkdown = mathDebriefMarkdown ?? chatFeedbackMarkdown;
+  const debriefFailed =
+    phase === "feedback" &&
+    !mathDrillMode &&
+    !busy &&
+    !feedbackMarkdown &&
+    Boolean(debriefAssistantRaw.trim()) &&
+    !debriefParsed?.feedbackMarkdown;
   const draft = speech.listening ? speech.transcript : typedDraft;
 
   useEffect(() => {
@@ -119,12 +164,15 @@ export function CaseCoachChat() {
 
   useEffect(() => {
     if (!inLiveCase || busy) return;
-    if (!lastAssistant || !coachLine.trim()) return;
+    if (!lastAssistant) return;
     if (lastSpokenIdRef.current === lastAssistant.id) return;
+
+    const line = (liveParsed?.spoken ?? "").trim();
+    if (!line) return;
 
     lastSpokenIdRef.current = lastAssistant.id;
     autoMicRef.current = true;
-    void speak(coachLine, {
+    void speak(line, {
       onStart: () => setSpokenVisibleId(lastAssistant.id),
       onComplete: () => {
         setSpokenVisibleId(lastAssistant.id);
@@ -133,16 +181,7 @@ export function CaseCoachChat() {
         }
       },
     });
-  }, [
-    lastAssistant,
-    coachLine,
-    busy,
-    inLiveCase,
-    speak,
-    speech.listening,
-    speech.start,
-    speech,
-  ]);
+  }, [lastAssistant?.id, busy, inLiveCase, liveParsed?.spoken, speak, speech]);
 
   const resetSession = useCallback(() => {
     stopSpeaking();
@@ -229,7 +268,11 @@ export function CaseCoachChat() {
       return;
     }
 
-    void sendMessage({ text: buildSessionEndMessage(config) });
+    void sendMessage({ text: buildSessionEndMessage(config) }).catch((err) => {
+      setDebriefError(
+        err instanceof Error ? err.message : "Could not generate debrief."
+      );
+    });
   }, [config, mathDrillMode, sendMessage, speech, stopSpeaking]);
 
   const sendDraft = useCallback(
@@ -280,7 +323,8 @@ export function CaseCoachChat() {
     phase === "feedback" &&
     !feedbackMarkdown &&
     !debriefError &&
-    (mathDrillMode || busy);
+    !debriefFailed &&
+    (mathDrillMode || busy || !debriefAssistant);
 
   const sessionTitle =
     phase === "setup"
@@ -424,9 +468,14 @@ export function CaseCoachChat() {
             <span className={`mx-auto ${statusPillClass}`}>Generating debrief…</span>
           )}
 
-          {(speech.error || chatError || debriefError) && (
+          {(speech.error || chatError || debriefError || debriefFailed) && (
             <p className="rounded-sm border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
-              {debriefError || speech.error || chatError?.message}
+              {debriefError ||
+                (debriefFailed
+                  ? "Debrief did not load — try ending the case again."
+                  : null) ||
+                speech.error ||
+                chatError?.message}
             </p>
           )}
         </>

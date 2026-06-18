@@ -173,6 +173,14 @@ export function buildSystemPrompt(
 ${caseBible}`;
   }
 
+  if (caseBible && phase === "feedback" && isLiveCaseMode(config.mode)) {
+    prompt += `
+
+## CASE REFERENCE (for debrief — do not repeat to candidate)
+
+${caseBible}`;
+  }
+
   if (phase === "case" && isLiveCaseMode(config.mode)) {
     prompt += casePacingBlock(elapsedMinutes);
   }

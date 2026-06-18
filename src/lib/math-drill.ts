@@ -56,17 +56,53 @@ function normalizeQuestion(item: unknown, index: number): MathDrillQuestion | nu
   return { n, question, answer, shortcut };
 }
 
-export function parseMathBatch(raw: string): MathDrillQuestion[] {
-  const block = extractBlock(raw, "MATH_BATCH") ?? raw.trim();
-  try {
-    const parsed = JSON.parse(block) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .map((item, index) => normalizeQuestion(item, index))
-      .filter((item): item is MathDrillQuestion => item !== null);
-  } catch {
-    return [];
+function stripCodeFences(text: string): string {
+  return text
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+}
+
+function extractMathBatchPayload(raw: string): string {
+  const complete = extractBlock(raw, "MATH_BATCH");
+  if (complete) return stripCodeFences(complete);
+
+  const open = raw.indexOf("[MATH_BATCH]");
+  if (open !== -1) {
+    let block = raw.slice(open + "[MATH_BATCH]".length).trim();
+    const close = block.indexOf("[/MATH_BATCH]");
+    if (close !== -1) block = block.slice(0, close);
+    return stripCodeFences(block);
   }
+
+  return stripCodeFences(raw.trim());
+}
+
+function parseJsonArray(text: string): unknown[] | null {
+  const trimmed = text.trim();
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    const match = trimmed.match(/\[[\s\S]*\]/);
+    if (!match) return null;
+    try {
+      const parsed = JSON.parse(match[0]) as unknown;
+      return Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+}
+
+export function parseMathBatch(raw: string): MathDrillQuestion[] {
+  const payload = extractMathBatchPayload(raw);
+  const parsed = parseJsonArray(payload);
+  if (!parsed) return [];
+
+  return parsed
+    .map((item, index) => normalizeQuestion(item, index))
+    .filter((item): item is MathDrillQuestion => item !== null);
 }
 
 function parseNumberLike(value: string): number | null {

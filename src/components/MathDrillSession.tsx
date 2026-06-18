@@ -17,7 +17,6 @@ import {
   type MathDrillStats,
 } from "@/lib/math-drill";
 import type { ExperienceLevel } from "@/lib/session-types";
-import { surfaceSoftClass } from "@/lib/ui-classes";
 
 export type MathDrillSessionHandle = {
   getStats: () => MathDrillStats;

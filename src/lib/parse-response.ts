@@ -16,6 +16,28 @@ function extractBlock(text: string, tag: string): string | null {
   return match?.[1]?.trim() ?? null;
 }
 
+function extractFeedback(raw: string, allowPartial = false): string | null {
+  const complete = extractBlock(raw, "FEEDBACK");
+  if (complete) return complete;
+
+  const open = raw.indexOf("[FEEDBACK]");
+  if (open !== -1) {
+    const afterOpen = raw.slice(open + "[FEEDBACK]".length);
+    const close = afterOpen.indexOf("[/FEEDBACK]");
+    if (close !== -1) return afterOpen.slice(0, close).trim();
+    if (allowPartial) return afterOpen.trim();
+  }
+
+  if (raw.includes("[SPOKEN]") || raw.includes("[CASE_BIBLE]")) {
+    return null;
+  }
+
+  const stripped = stripBlocks(raw);
+  if (stripped.length >= 40) return stripped;
+
+  return null;
+}
+
 function extractSpoken(raw: string): string {
   const complete = extractBlock(raw, "SPOKEN");
   if (complete) return complete;
@@ -55,9 +77,12 @@ function parseExhibit(raw: string): Exhibit | null {
   }
 }
 
-export function parseCoachResponse(raw: string): ParsedCoachResponse {
+export function parseCoachResponse(
+  raw: string,
+  options?: { allowPartialFeedback?: boolean }
+): ParsedCoachResponse {
   const caseBible = extractBlock(raw, "CASE_BIBLE");
-  const feedbackMarkdown = extractBlock(raw, "FEEDBACK");
+  const feedbackMarkdown = extractFeedback(raw, options?.allowPartialFeedback ?? false);
   const mentalShortcut = extractBlock(raw, "SHORTCUT");
   const mathResult = extractBlock(raw, "RESULT");
 
