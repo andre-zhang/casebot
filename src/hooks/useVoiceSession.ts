@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { prepareTextForSpeech } from "@/lib/speech-text";
 
 function scoreVoice(voice: SpeechSynthesisVoice): number {
   const name = voice.name.toLowerCase();
@@ -13,19 +14,13 @@ function scoreVoice(voice: SpeechSynthesisVoice): number {
   if (name.includes("neural")) score += 50;
   if (name.includes("natural")) score += 35;
   if (name.includes("online")) score += 30;
-  if (name.includes("premium")) score += 25;
 
   const preferred = [
     "jenny online",
     "aria online",
-    "sonia online",
-    "guy online",
+    "andrew online",
     "microsoft jenny",
     "microsoft aria",
-    "microsoft guy",
-    "google us english",
-    "samantha",
-    "daniel",
   ];
   for (let i = 0; i < preferred.length; i += 1) {
     if (name.includes(preferred[i]!)) {
@@ -49,18 +44,6 @@ function pickBestVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | n
   return pool.reduce((best, voice) =>
     scoreVoice(voice) > scoreVoice(best) ? voice : best
   );
-}
-
-function prepareTextForSpeech(text: string): string {
-  return text
-    .replace(/\$/g, " dollars ")
-    .replace(/(\d)\s*%/g, "$1 percent")
-    .replace(/\bvs\.?\b/gi, "versus")
-    .replace(/\be\.g\.\b/gi, "for example")
-    .replace(/\bi\.e\.\b/gi, "that is")
-    .replace(/\betc\.\b/gi, "and so on")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 function splitForSpeech(text: string): string[] {
@@ -119,8 +102,17 @@ function waitForVoices(timeoutMs = 1500): Promise<SpeechSynthesisVoice[]> {
   });
 }
 
+const SILENT_WAV =
+  "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+
 export function unlockSpeechOutput(): void {
-  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+  if (typeof window === "undefined") return;
+
+  const silent = new Audio(SILENT_WAV);
+  silent.volume = 0.01;
+  void silent.play().catch(() => {});
+
+  if (!("speechSynthesis" in window)) return;
   window.speechSynthesis.resume();
   void waitForVoices(500).then((voices) => {
     if (voices.length === 0) return;
@@ -136,12 +128,85 @@ export type SpeakOptions = {
   onComplete?: () => void;
 };
 
+async function synthesizeNeuralSpeech(text: string): Promise<Blob | null> {
+  const response = await fetch("/api/tts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+
+  if (!response.ok) return null;
+  return response.blob();
+}
+
+function speakWithBrowser(
+  text: string,
+  voice: SpeechSynthesisVoice | null,
+  callbacks: {
+    onStart?: () => void;
+    onComplete?: () => void;
+    setSpeaking: (value: boolean) => void;
+  }
+): void {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+    callbacks.onStart?.();
+    callbacks.onComplete?.();
+    return;
+  }
+
+  window.speechSynthesis.resume();
+  const queue = splitForSpeech(text);
+  let index = 0;
+  let started = false;
+
+  const finish = () => {
+    callbacks.setSpeaking(false);
+    callbacks.onComplete?.();
+  };
+
+  const speakNext = () => {
+    if (index >= queue.length) {
+      finish();
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(queue[index]);
+    index += 1;
+    utterance.rate = 0.96;
+    utterance.pitch = 1;
+    utterance.lang = "en-US";
+    if (voice) utterance.voice = voice;
+
+    utterance.onstart = () => {
+      if (!started) {
+        started = true;
+        callbacks.onStart?.();
+      }
+      callbacks.setSpeaking(true);
+    };
+    utterance.onend = () => {
+      window.setTimeout(speakNext, index >= queue.length ? 0 : 220);
+    };
+    utterance.onerror = () => {
+      if (!started) {
+        started = true;
+        callbacks.onStart?.();
+      }
+      finish();
+    };
+
+    window.speechSynthesis.speak(utterance);
+  };
+
+  speakNext();
+}
+
 export function useSpeechOutput() {
   const [speaking, setSpeaking] = useState(false);
   const voiceRef = useRef<SpeechSynthesisVoice | null>(null);
-  const onCompleteRef = useRef<(() => void) | null>(null);
-  const onStartRef = useRef<(() => void) | null>(null);
-  const startedRef = useRef(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
+  const generationRef = useRef(0);
 
   useEffect(() => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
@@ -157,98 +222,116 @@ export function useSpeechOutput() {
     };
   }, []);
 
-  const stop = useCallback(() => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    window.speechSynthesis.cancel();
-    setSpeaking(false);
-    onCompleteRef.current = null;
-    onStartRef.current = null;
-    startedRef.current = false;
+  const cleanupAudio = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = "";
+      audioRef.current = null;
+    }
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = null;
+    }
   }, []);
 
+  const stop = useCallback(() => {
+    generationRef.current += 1;
+    cleanupAudio();
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+    setSpeaking(false);
+  }, [cleanupAudio]);
+
   const speak = useCallback(
-    (text: string, options?: SpeakOptions) =>
-      new Promise<void>((resolve) => {
-        if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-          options?.onStart?.();
-          options?.onComplete?.();
-          resolve();
-          return;
-        }
+    (text: string, options?: SpeakOptions) => {
+      const trimmed = prepareTextForSpeech(text);
+      if (!trimmed) {
+        options?.onStart?.();
+        options?.onComplete?.();
+        return Promise.resolve();
+      }
 
-        const trimmed = text.trim();
-        if (!trimmed) {
-          options?.onStart?.();
-          options?.onComplete?.();
-          resolve();
-          return;
-        }
+      stop();
+      const generation = generationRef.current;
 
-        stop();
-        startedRef.current = false;
-        onCompleteRef.current = () => {
+      return new Promise<void>((resolve) => {
+        const finish = () => {
+          if (generationRef.current !== generation) return;
+          setSpeaking(false);
           options?.onComplete?.();
           resolve();
         };
-        onStartRef.current = options?.onStart ?? null;
 
-        void waitForVoices().then((voices) => {
-          window.speechSynthesis.resume();
+        const markStarted = () => {
+          if (generationRef.current !== generation) return;
+          options?.onStart?.();
+          setSpeaking(true);
+        };
+
+        const fallbackToBrowser = async () => {
+          if (generationRef.current !== generation) return;
+
+          const voices =
+            typeof window !== "undefined" && "speechSynthesis" in window
+              ? await waitForVoices()
+              : [];
           if (voices.length > 0) {
             voiceRef.current = pickBestVoice(voices);
           }
 
-          const queue = splitForSpeech(trimmed);
-          let index = 0;
-
-          const finish = () => {
-            setSpeaking(false);
-            const done = onCompleteRef.current;
-            onCompleteRef.current = null;
-            onStartRef.current = null;
-            done?.();
-          };
-
-          const speakNext = () => {
-            if (index >= queue.length) {
+          speakWithBrowser(trimmed, voiceRef.current, {
+            onStart: options?.onStart,
+            onComplete: () => {
+              if (generationRef.current !== generation) return;
               finish();
-              return;
-            }
+            },
+            setSpeaking: (value) => {
+              if (generationRef.current !== generation) return;
+              setSpeaking(value);
+            },
+          });
+        };
 
-            const utterance = new SpeechSynthesisUtterance(queue[index]);
-            index += 1;
-            utterance.rate = 0.96;
-            utterance.pitch = 1;
-            utterance.lang = "en-US";
-            if (voiceRef.current) {
-              utterance.voice = voiceRef.current;
-            }
+        void (async () => {
+          try {
+            const blob = await synthesizeNeuralSpeech(trimmed);
+            if (generationRef.current !== generation) return;
 
-            utterance.onstart = () => {
-              if (!startedRef.current) {
-                startedRef.current = true;
-                onStartRef.current?.();
+            if (blob && blob.size > 0) {
+              const url = URL.createObjectURL(blob);
+              objectUrlRef.current = url;
+              const audio = new Audio(url);
+              audioRef.current = audio;
+
+              audio.onplay = () => markStarted();
+              audio.onended = () => {
+                cleanupAudio();
+                finish();
+              };
+              audio.onerror = () => {
+                cleanupAudio();
+                void fallbackToBrowser();
+              };
+
+              try {
+                await audio.play();
+                return;
+              } catch {
+                cleanupAudio();
+                await fallbackToBrowser();
+                return;
               }
-              setSpeaking(true);
-            };
-            utterance.onend = () => {
-              window.setTimeout(speakNext, index >= queue.length ? 0 : 220);
-            };
-            utterance.onerror = () => {
-              if (!startedRef.current) {
-                startedRef.current = true;
-                onStartRef.current?.();
-              }
-              finish();
-            };
+            }
+          } catch {
+            // Fall through to browser TTS.
+          }
 
-            window.speechSynthesis.speak(utterance);
-          };
-
-          speakNext();
-        });
-      }),
-    [stop]
+          await fallbackToBrowser();
+        })();
+      });
+    },
+    [cleanupAudio, stop]
   );
 
   return { speak, stop, speaking };

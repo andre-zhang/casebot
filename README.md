@@ -6,7 +6,7 @@ Voice-first MBB case interview coach powered by Claude. Share the deployed URL s
 
 - Custom coach persona (McKinsey / BCG / Bain style)
 - **Free voice input** via browser speech recognition (Chrome or Edge recommended)
-- **Free voice output** via browser text-to-speech (uses the best neural voice on your device)
+- **Voice output** via Microsoft Edge neural TTS (natural speech, no API key). Falls back to browser voices if unavailable.
 - Streaming chat with transcript toggle
 - Public shareable link after deploy
 

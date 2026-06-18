@@ -5,7 +5,10 @@ const buckets = new Map<string, Bucket>();
 const WINDOW_MS = 60 * 60 * 1000;
 const MAX_REQUESTS = 40;
 
-export function checkRateLimit(key: string): { ok: true } | { ok: false; retryAfterSec: number } {
+export function checkRateLimit(
+  key: string,
+  maxRequests = MAX_REQUESTS
+): { ok: true } | { ok: false; retryAfterSec: number } {
   const now = Date.now();
   const existing = buckets.get(key);
 
@@ -14,7 +17,7 @@ export function checkRateLimit(key: string): { ok: true } | { ok: false; retryAf
     return { ok: true };
   }
 
-  if (existing.count >= MAX_REQUESTS) {
+  if (existing.count >= maxRequests) {
     return {
       ok: false,
       retryAfterSec: Math.ceil((existing.resetAt - now) / 1000),
