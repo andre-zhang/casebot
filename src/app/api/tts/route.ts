@@ -67,7 +67,7 @@ export async function POST(req: Request) {
       OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3
     );
 
-    const { audioStream } = tts.toStream(prepared, { rate: "+4%" });
+    const { audioStream } = tts.toStream(prepared, { rate: "-18%" });
     const audio = await streamToBuffer(audioStream);
     tts.close();
 

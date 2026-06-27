@@ -85,7 +85,7 @@ export async function POST(req: Request) {
       : isLiveCaseStart
         ? 1400
         : isLiveCaseTurn
-          ? 280
+          ? 220
           : isSessionStart
             ? 550
             : 650;

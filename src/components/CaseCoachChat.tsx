@@ -11,7 +11,7 @@ import {
   buildSessionEndMessage,
   buildSessionStartMessage,
 } from "@/lib/build-system-prompt";
-import { parseCoachResponse } from "@/lib/parse-response";
+import { extractCompleteSpoken, parseCoachResponse } from "@/lib/parse-response";
 import {
   isLiveCaseMode,
   modeIsMathDrill,
@@ -42,6 +42,12 @@ function messageText(parts: { type: string; text?: string }[] | undefined): stri
 
 function isSessionEndUserMessage(text: string): boolean {
   return /\[SYSTEM:.*(End case|ended the)/i.test(text);
+}
+
+function userAskedForThinkingTime(text: string): boolean {
+  return /\b(give me a (minute|moment|sec(ond)?)|need a (minute|moment)|let me think|time to think|can i (have|take) a (minute|moment)|hold on|one moment|pause for a (minute|moment)|need (some )?time to think)\b/i.test(
+    text
+  );
 }
 
 function findDebriefAssistantMessage(
@@ -81,10 +87,12 @@ export function CaseCoachChat() {
   const [typedDraft, setTypedDraft] = useState("");
   const [debriefError, setDebriefError] = useState<string | null>(null);
   const [spokenVisibleId, setSpokenVisibleId] = useState<string | null>(null);
+  const [awaitingManualMic, setAwaitingManualMic] = useState(false);
 
   const mathDrillRef = useRef<MathDrillSessionHandle>(null);
   const lastSpokenIdRef = useRef<string | null>(null);
   const autoMicRef = useRef(false);
+  const endCaseTriggeredRef = useRef(false);
 
   const busy = status === "submitted" || status === "streaming";
   const voiceEnabled = config ? modeUsesVoice(config.mode) : false;
@@ -132,7 +140,12 @@ export function CaseCoachChat() {
     [lastAssistantRaw]
   );
 
-  const coachLine = liveParsed?.spoken ?? "";
+  const readySpoken = useMemo(
+    () => extractCompleteSpoken(lastAssistantRaw),
+    [lastAssistantRaw]
+  );
+
+  const coachLine = readySpoken || liveParsed?.spoken || "";
   const showCoachLine = inLiveCase
     ? lastAssistant?.id === spokenVisibleId && Boolean(coachLine)
     : Boolean(coachLine);
@@ -151,27 +164,39 @@ export function CaseCoachChat() {
   const draft = speech.listening ? speech.transcript : typedDraft;
 
   useEffect(() => {
-    if (busy || !liveParsed) return;
+    if (!liveParsed) return;
 
-    if (liveParsed.caseBible && liveCaseMode) {
+    const caseBibleComplete =
+      liveParsed.caseBible &&
+      (lastAssistantRaw.includes("[/CASE_BIBLE]") || !busy);
+
+    if (caseBibleComplete && liveCaseMode) {
       sessionRef.current.caseBible = liveParsed.caseBible;
     }
 
     if (phase === "case" && liveParsed.exhibits.length > 0) {
-      setActiveExhibits(liveParsed.exhibits);
+      setActiveExhibits((prev) => {
+        const merged = [...prev];
+        for (const exhibit of liveParsed.exhibits) {
+          const exists = merged.some(
+            (e) => e.title === exhibit.title && e.type === exhibit.type
+          );
+          if (!exists) merged.push(exhibit);
+        }
+        return merged;
+      });
     }
-  }, [busy, liveCaseMode, liveParsed, phase]);
+  }, [busy, lastAssistantRaw, liveCaseMode, liveParsed, phase]);
 
   useEffect(() => {
-    if (!inLiveCase || busy) return;
-    if (!lastAssistant) return;
+    if (!inLiveCase || !lastAssistant) return;
     if (lastSpokenIdRef.current === lastAssistant.id) return;
 
-    const line = (liveParsed?.spoken ?? "").trim();
+    const line = readySpoken.trim();
     if (!line) return;
 
     lastSpokenIdRef.current = lastAssistant.id;
-    autoMicRef.current = true;
+    autoMicRef.current = !awaitingManualMic;
     void speak(line, {
       onStart: () => setSpokenVisibleId(lastAssistant.id),
       onComplete: () => {
@@ -181,7 +206,7 @@ export function CaseCoachChat() {
         }
       },
     });
-  }, [lastAssistant?.id, busy, inLiveCase, liveParsed?.spoken, speak, speech]);
+  }, [inLiveCase, lastAssistant, readySpoken, speak, speech.start, speech.listening]);
 
   const resetSession = useCallback(() => {
     stopSpeaking();
@@ -196,6 +221,8 @@ export function CaseCoachChat() {
     sessionRef.current.caseStartedAt = null;
     lastSpokenIdRef.current = null;
     autoMicRef.current = false;
+    endCaseTriggeredRef.current = false;
+    setAwaitingManualMic(false);
     setSpokenVisibleId(null);
     setPhase("setup");
     setConfig(null);
@@ -217,7 +244,9 @@ export function CaseCoachChat() {
       setActiveExhibits([]);
       setDebriefError(null);
       setSpokenVisibleId(null);
+      setAwaitingManualMic(false);
       lastSpokenIdRef.current = null;
+      endCaseTriggeredRef.current = false;
 
       if (modeIsMathDrill(nextConfig.mode)) {
         return;
@@ -275,12 +304,43 @@ export function CaseCoachChat() {
     });
   }, [config, mathDrillMode, sendMessage, speech, stopSpeaking]);
 
+  useEffect(() => {
+    if (!inLiveCase || busy || !liveParsed?.endCase) return;
+    if (endCaseTriggeredRef.current) return;
+
+    const line = readySpoken.trim();
+    const closingSpokenDone =
+      !line ||
+      (lastAssistant &&
+        lastSpokenIdRef.current === lastAssistant.id &&
+        spokenVisibleId === lastAssistant.id &&
+        !speaking);
+
+    if (!closingSpokenDone) return;
+
+    endCaseTriggeredRef.current = true;
+    autoMicRef.current = false;
+    setAwaitingManualMic(false);
+    void handleEndCase();
+  }, [
+    busy,
+    handleEndCase,
+    inLiveCase,
+    lastAssistant,
+    liveParsed?.endCase,
+    readySpoken,
+    speaking,
+    spokenVisibleId,
+  ]);
+
   const sendDraft = useCallback(
     async (text: string) => {
       const trimmed = text.trim();
       if (!trimmed || busy || phase === "feedback") return;
 
+      const wantsThinkingTime = userAskedForThinkingTime(trimmed);
       autoMicRef.current = false;
+      setAwaitingManualMic(wantsThinkingTime);
       stopSpeaking();
       speech.stop();
       speech.reset();
@@ -304,18 +364,19 @@ export function CaseCoachChat() {
       stopSpeaking();
     }
 
+    setAwaitingManualMic(false);
+    autoMicRef.current = true;
     speech.reset();
     setTypedDraft("");
     speech.start();
   }, [busy, draft, inLiveCase, sendDraft, speaking, speech, stopSpeaking]);
 
   const awaitingCoach =
-    busy && phase === "case" && !coachLine.trim() && !mathDrillMode;
+    busy && phase === "case" && !readySpoken.trim() && !mathDrillMode;
 
   const awaitingSpeech =
     inLiveCase &&
-    !busy &&
-    Boolean(coachLine) &&
+    Boolean(readySpoken) &&
     lastAssistant?.id !== spokenVisibleId &&
     !speaking;
 
@@ -340,19 +401,23 @@ export function CaseCoachChat() {
   const phaseLabel =
     phase === "feedback"
       ? "Debrief ready"
-      : awaitingCoach
-        ? liveCaseMode
-          ? "Preparing case"
-          : "Starting session"
-        : speaking || awaitingSpeech
-          ? "Coach speaking"
-          : busy
-            ? "Coach thinking"
-            : speech.listening
-              ? "Listening"
-              : inLiveCase
-                ? "Your turn"
-                : "In session";
+      : awaitingManualMic && !speech.listening && !busy && !speaking
+        ? "Take your time"
+        : awaitingCoach
+          ? liveCaseMode
+            ? "Preparing case"
+            : "Starting session"
+          : speaking || awaitingSpeech
+            ? "Coach speaking"
+            : busy
+              ? "Coach thinking"
+              : speech.listening
+                ? "Listening"
+                : inLiveCase
+                  ? awaitingManualMic
+                    ? "Tap mic when ready"
+                    : "Your turn"
+                  : "In session";
 
   return (
     <>
@@ -412,6 +477,12 @@ export function CaseCoachChat() {
 
                   <ExhibitPanel exhibits={activeExhibits} />
 
+                  {inLiveCase && awaitingManualMic && !speech.listening && !busy && (
+                    <p className="text-center text-sm text-[var(--uoft-muted)]">
+                      Take your time — tap the mic when you&apos;re ready.
+                    </p>
+                  )}
+
                   {inLiveCase && (
                     <button
                       type="button"
@@ -421,7 +492,9 @@ export function CaseCoachChat() {
                       className={`relative flex h-28 w-28 items-center justify-center rounded-sm border-2 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--uoft-blue)] disabled:opacity-50 ${
                         speech.listening
                           ? "border-[var(--uoft-blue)] bg-[var(--uoft-blue)] text-white"
-                          : "border-[var(--uoft-border)] bg-white text-[var(--uoft-blue)] hover:border-[var(--uoft-blue)]"
+                          : awaitingManualMic
+                            ? "border-[var(--uoft-blue)] bg-[var(--uoft-bg)] text-[var(--uoft-blue)] ring-2 ring-[var(--uoft-blue)]/30"
+                            : "border-[var(--uoft-border)] bg-white text-[var(--uoft-blue)] hover:border-[var(--uoft-blue)]"
                       }`}
                     >
                       <MicIcon listening={speech.listening} />

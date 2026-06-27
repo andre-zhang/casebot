@@ -7,6 +7,7 @@ export type ParsedCoachResponse = {
   feedbackMarkdown: string | null;
   mentalShortcut: string | null;
   mathResult: string | null;
+  endCase: boolean;
   raw: string;
 };
 
@@ -38,8 +39,15 @@ function extractFeedback(raw: string, allowPartial = false): string | null {
   return null;
 }
 
-function extractSpoken(raw: string): string {
+export function extractCompleteSpoken(raw: string): string {
   const complete = extractBlock(raw, "SPOKEN");
+  if (complete) return complete.trim();
+
+  return "";
+}
+
+function extractSpoken(raw: string): string {
+  const complete = extractCompleteSpoken(raw);
   if (complete) return complete;
 
   const open = raw.indexOf("[SPOKEN]");
@@ -49,12 +57,13 @@ function extractSpoken(raw: string): string {
   const close = afterOpen.indexOf("[/SPOKEN]");
   if (close !== -1) return afterOpen.slice(0, close).trim();
 
-  return afterOpen.replace(/\[(CASE_BIBLE|EXHIBIT|FEEDBACK|SHORTCUT|RESULT)[\s\S]*/i, "").trim();
+  return afterOpen.replace(/\[(CASE_BIBLE|EXHIBIT|FEEDBACK|SHORTCUT|RESULT|END_CASE)[\s\S]*/i, "").trim();
 }
 
 function stripBlocks(text: string): string {
   return text
-    .replace(/\[(CASE_BIBLE|SPOKEN|EXHIBIT|FEEDBACK|SHORTCUT|RESULT)\][\s\S]*?\[\/\1\]/gi, "")
+    .replace(/\[(CASE_BIBLE|SPOKEN|EXHIBIT|FEEDBACK|SHORTCUT|RESULT|END_CASE)\][\s\S]*?\[\/\1\]/gi, "")
+    .replace(/\[END_CASE\]/gi, "")
     .trim();
 }
 
@@ -66,15 +75,75 @@ export function parseMathQuestion(line: string): { label: string; text: string }
   return { label: "Q", text: line.trim() };
 }
 
+function normalizeExhibitJson(raw: string): string {
+  return raw
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+}
+
+function toNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const cleaned = value.replace(/[,$%]/g, "").trim();
+    const parsed = Number(cleaned);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
 function parseExhibit(raw: string): Exhibit | null {
   try {
-    const data = JSON.parse(raw) as Exhibit;
-    if (data.type === "table" && data.headers && data.rows) return data;
-    if (data.type === "bar" && data.labels && data.values) return data;
+    const data = JSON.parse(normalizeExhibitJson(raw)) as Record<string, unknown>;
+    const type = String(data.type ?? "").toLowerCase();
+
+    if ((type === "table" || type === "chart") && Array.isArray(data.headers)) {
+      const headers = (data.headers as unknown[]).map(String);
+      const rawRows = data.rows;
+      if (!Array.isArray(rawRows)) return null;
+      const rows = rawRows.map((row) =>
+        Array.isArray(row) ? row.map(String) : [String(row)]
+      );
+      if (headers.length > 0 && rows.length > 0) {
+        return {
+          type: "table",
+          title: String(data.title ?? "Exhibit"),
+          headers,
+          rows,
+        };
+      }
+    }
+
+    if (
+      type === "bar" ||
+      type === "chart" ||
+      type === "figure" ||
+      (Array.isArray(data.labels) && Array.isArray(data.values))
+    ) {
+      const labels = (data.labels as unknown[]).map(String);
+      const values = (data.values as unknown[])
+        .map(toNumber)
+        .filter((v): v is number => v !== null);
+      if (labels.length > 0 && values.length > 0) {
+        return {
+          type: "bar",
+          title: String(data.title ?? "Exhibit"),
+          labels: labels.slice(0, values.length),
+          values: values.slice(0, labels.length),
+          unit: data.unit ? String(data.unit) : undefined,
+        };
+      }
+    }
+
     return null;
   } catch {
     return null;
   }
+}
+
+function detectEndCase(raw: string): boolean {
+  return /\[END_CASE\]/i.test(raw);
 }
 
 export function parseCoachResponse(
@@ -102,6 +171,7 @@ export function parseCoachResponse(
     feedbackMarkdown,
     mentalShortcut,
     mathResult,
+    endCase: detectEndCase(raw),
     raw,
   };
 }

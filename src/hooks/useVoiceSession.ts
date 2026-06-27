@@ -177,7 +177,7 @@ function speakWithBrowser(
 
     const utterance = new SpeechSynthesisUtterance(queue[index]);
     index += 1;
-    utterance.rate = 0.96;
+    utterance.rate = 0.85;
     utterance.pitch = 1;
     utterance.lang = "en-US";
     if (voice) utterance.voice = voice;

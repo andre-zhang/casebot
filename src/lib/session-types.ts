@@ -1,6 +1,5 @@
 export type SessionMode =
-  | "interviewer-led"
-  | "candidate-led"
+  | "live-case"
   | "framework"
   | "transcript-review"
   | "market-sizing"
@@ -34,8 +33,7 @@ export type Exhibit =
     };
 
 export const SESSION_MODES: { value: SessionMode; label: string }[] = [
-  { value: "interviewer-led", label: "Interviewer-led case" },
-  { value: "candidate-led", label: "Candidate-led case" },
+  { value: "live-case", label: "Live case" },
   { value: "framework", label: "Framework review" },
   { value: "transcript-review", label: "Transcript feedback" },
   { value: "market-sizing", label: "Market sizing" },
@@ -67,11 +65,11 @@ export const CASE_TYPES = [
 ];
 
 export function modeUsesVoice(mode: SessionMode): boolean {
-  return mode === "interviewer-led" || mode === "candidate-led";
+  return mode === "live-case";
 }
 
 export function isLiveCaseMode(mode: SessionMode): boolean {
-  return mode === "interviewer-led" || mode === "candidate-led";
+  return mode === "live-case";
 }
 
 export function sessionModeLabel(mode: SessionMode): string {
@@ -94,7 +92,7 @@ export function modeIsMathDrill(mode: SessionMode): boolean {
 
 export function defaultConfig(): SessionConfig {
   return {
-    mode: "interviewer-led",
+    mode: "live-case",
     level: "intermediate",
     caseCount: 1,
     industry: "Random",

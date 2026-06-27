@@ -47,7 +47,7 @@ async function main() {
       ],
       phase: "case",
       sessionConfig: {
-        mode: "interviewer-led",
+        mode: "live-case",
         level: "beginner",
         caseCount: 1,
         industry: "Retail",
